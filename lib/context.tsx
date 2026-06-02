@@ -330,7 +330,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const createdEntry: InvestmentLogEntry = {
       id: generateId(),
-      date: new Date().toISOString().slice(0, 10),
+      date: input.date ?? new Date().toISOString().slice(0, 10),
       symbol: input.symbol,
       amount: input.amountThb,
       targetPrice: input.priceUsd,

@@ -91,6 +91,7 @@ export interface InvestmentLogEntry {
 
 export interface ExecuteTradeInput {
   action: TradeAction;
+  date?: string;
   symbol: string;
   companyName: string;
   category: StockCategory;
