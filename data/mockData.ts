@@ -1,0 +1,298 @@
+import {
+  StockWatchlistItem,
+  Portfolio,
+  InvestmentLogEntry,
+  PricePoint,
+} from "@/types";
+
+export const mockWatchlist: StockWatchlistItem[] = [
+  {
+    symbol: "GOOGL",
+    companyName: "Alphabet Inc. Class A",
+    currentPrice: 376.37,
+    previousClose: 380.34,
+    changePercent: -1.04,
+    levels: {
+      support: [365.1, 350.3, 339.3],
+      resistance: [380.3, 383, 385.7],
+    },
+    status: "รอดู",
+    recommendation: "รอซื้อ",
+    category: "Tech",
+    notes: "",
+  },
+  {
+    symbol: "VOO",
+    companyName: "Vanguard S&P 500 ETF",
+    currentPrice: 697.3,
+    previousClose: 695.49,
+    changePercent: 0.26,
+    levels: {
+      support: [695, 690, 683],
+      resistance: [718, 753, 802],
+    },
+    status: "รอดู",
+    recommendation: "ถือ",
+    category: "ETF",
+    notes: "",
+  },
+  {
+    symbol: "NVDA",
+    companyName: "NVIDIA Corporation",
+    currentPrice: 224.36,
+    previousClose: 211.14,
+    changePercent: 6.26,
+    levels: {
+      support: [223.5, 220.8, 219.4],
+      resistance: [225.3, 231.1, 235.7],
+    },
+    status: "รอดู",
+    recommendation: "ซื้อไม้เล็ก",
+    category: "Tech",
+    notes: "",
+  },
+  {
+    symbol: "AAPL",
+    companyName: "Apple Inc.",
+    currentPrice: 306.31,
+    previousClose: 312.06,
+    changePercent: -1.84,
+    levels: {
+      support: [305, 302.3, 300.2],
+      resistance: [308.3, 310.9, 315.5],
+    },
+    status: "รอดู",
+    recommendation: "ถือ",
+    category: "Blue Chip",
+    notes: "",
+  },
+  {
+    symbol: "RKLB",
+    companyName: "Rocket Lab USA, Inc.",
+    currentPrice: 122.39,
+    previousClose: 143.48,
+    changePercent: -14.7,
+    levels: {
+      support: [118.7, 117.6, 113.8],
+      resistance: [124.2, 125.4, 127.3],
+    },
+    status: "รอดู",
+    recommendation: "รอซื้อ",
+    category: "Growth",
+    notes: "",
+  },
+  {
+    symbol: "PLTR",
+    companyName: "Palantir Technologies Inc.",
+    currentPrice: 160.65,
+    previousClose: 156.54,
+    changePercent: 2.63,
+    levels: {
+      support: [156.5, 152.6, 149.4],
+      resistance: [160.8, 165.5, 173.5],
+    },
+    status: "รอดู",
+    recommendation: "รอซื้อ",
+    category: "Tech",
+    notes: "Watching AI/data platform momentum",
+  },
+  {
+    symbol: "ASTS",
+    companyName: "AST SpaceMobile, Inc.",
+    currentPrice: 105.65,
+    previousClose: 113.41,
+    changePercent: -6.84,
+    levels: {
+      support: [102.5, 98.25, 96.23],
+      resistance: [105.9, 108.8, 113.4],
+    },
+    status: "รอดู",
+    recommendation: "รอซื้อ",
+    category: "Growth",
+    notes: "Watching satellite connectivity growth",
+  },
+  {
+    symbol: "NOW",
+    companyName: "ServiceNow, Inc.",
+    currentPrice: 135.86,
+    previousClose: 124.37,
+    changePercent: 9.24,
+    levels: {
+      support: [131.8, 126.3, 124.4],
+      resistance: [139.9, 146.7, 156.2],
+    },
+    status: "รอดู",
+    recommendation: "รอซื้อ",
+    category: "Tech",
+    notes: "Watching enterprise software trend",
+  },
+  {
+    symbol: "IREN",
+    companyName: "IREN Limited",
+    currentPrice: 65.33,
+    previousClose: 63.54,
+    changePercent: 2.82,
+    levels: {
+      support: [64.05, 63.54, 61.2],
+      resistance: [67.29, 67.84, 70.56],
+    },
+    status: "รอดู",
+    recommendation: "รอซื้อ",
+    category: "Growth",
+    notes: "Watching AI infrastructure / bitcoin mining exposure",
+  },
+];
+
+export const mockPortfolio: Portfolio = {
+  holdings: [
+    {
+      symbol: "GOOGL",
+      companyName: "Alphabet Inc. Class A",
+      shares: 0.546112,
+      avgCost: 300.93,
+      currentPrice: 376.37,
+      allocationPercent: 34.99,
+      category: "Tech",
+    },
+    {
+      symbol: "VOO",
+      companyName: "Vanguard S&P 500 ETF",
+      shares: 0.267518,
+      avgCost: 636.63,
+      currentPrice: 697.3,
+      allocationPercent: 31.75,
+      category: "ETF",
+    },
+    {
+      symbol: "NVDA",
+      companyName: "NVIDIA Corporation",
+      shares: 0.408005,
+      avgCost: 189.17,
+      currentPrice: 224.36,
+      allocationPercent: 15.58,
+      category: "Tech",
+    },
+    {
+      symbol: "AAPL",
+      companyName: "Apple Inc.",
+      shares: 0.255395,
+      avgCost: 272.35,
+      currentPrice: 306.31,
+      allocationPercent: 13.32,
+      category: "Blue Chip",
+    },
+    {
+      symbol: "RKLB",
+      companyName: "Rocket Lab USA, Inc.",
+      shares: 0.209331,
+      avgCost: 131.5,
+      currentPrice: 122.39,
+      allocationPercent: 4.36,
+      category: "Growth",
+    },
+  ],
+  cashBalance: 2000,
+  totalInvested: 0,
+};
+
+export const mockInvestmentLog: InvestmentLogEntry[] = [
+  {
+    id: "1",
+    date: "2025-06-01",
+    symbol: "GOOGL",
+    amount: 500,
+    targetPrice: 170,
+    actualPrice: 170.5,
+    reason: "DCA ปกติ",
+    status: "executed",
+    notes: "ซื้อใกล้แนวรับ",
+  },
+  {
+    id: "2",
+    date: "2025-05-28",
+    symbol: "NVDA",
+    amount: 800,
+    targetPrice: 210,
+    actualPrice: 211.2,
+    reason: "ย่อแรง",
+    status: "executed",
+    notes: "ซื้อหลัง pullback",
+  },
+  {
+    id: "3",
+    date: "2025-05-25",
+    symbol: "RKLB",
+    amount: 300,
+    targetPrice: 120,
+    reason: "ใกล้แนวรับ",
+    status: "planned",
+    notes: "รอยืนยันแนวรับ",
+  },
+  {
+    id: "4",
+    date: "2025-05-22",
+    symbol: "VOO",
+    amount: 1000,
+    targetPrice: 540,
+    actualPrice: 542,
+    reason: "DCA ปกติ",
+    status: "executed",
+  },
+  {
+    id: "5",
+    date: "2025-05-20",
+    symbol: "AAPL",
+    amount: 600,
+    targetPrice: 200,
+    reason: "ใกล้แนวรับ",
+    status: "skipped",
+    notes: "ราคาไม่ถึงเป้า",
+  },
+];
+
+function generateMockPrices(
+  basePrice: number,
+  days: number = 60,
+  volatility: number = 0.02
+): PricePoint[] {
+  const points: PricePoint[] = [];
+  let price = basePrice * 0.92;
+  const now = new Date();
+
+  for (let i = days; i >= 0; i--) {
+    const date = new Date(now);
+    date.setDate(date.getDate() - i);
+    const change = (Math.random() - 0.48) * volatility * price;
+    price = Math.max(price + change, basePrice * 0.7);
+    points.push({
+      date: date.toISOString().split("T")[0],
+      price: parseFloat(price.toFixed(2)),
+      volume: Math.floor(Math.random() * 5000000 + 1000000),
+    });
+  }
+  return points;
+}
+
+export const mockPriceHistory: Record<string, PricePoint[]> = {
+  GOOGL: generateMockPrices(376.37, 60, 0.018),
+  VOO: generateMockPrices(697.3, 60, 0.012),
+  NVDA: generateMockPrices(224.36, 60, 0.025),
+  AAPL: generateMockPrices(306.31, 60, 0.015),
+  RKLB: generateMockPrices(122.39, 60, 0.035),
+  PLTR: generateMockPrices(160.65, 60, 0.03),
+  ASTS: generateMockPrices(105.65, 60, 0.045),
+  NOW: generateMockPrices(135.86, 60, 0.025),
+  IREN: generateMockPrices(65.33, 60, 0.05),
+};
+
+export const ALLOCATION_COLORS: Record<string, string> = {
+  GOOGL: "#60a5fa",
+  VOO: "#34d399",
+  NVDA: "#a78bfa",
+  AAPL: "#f9a8d4",
+  RKLB: "#fb923c",
+  PLTR: "#38bdf8",
+  ASTS: "#22c55e",
+  NOW: "#818cf8",
+  IREN: "#f97316",
+};
