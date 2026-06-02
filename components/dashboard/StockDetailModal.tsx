@@ -23,6 +23,9 @@ import {
   getRsiColor,
   getStockStatus,
   getStatusColor,
+  calculateBuyZoneScore,
+  getActionAmountLabel,
+  getBuyScoreColor,
 } from "@/lib/utils";
 import { clsx } from "clsx";
 
@@ -57,7 +60,7 @@ export default function StockDetailModal({
   symbol,
   onClose,
 }: StockDetailModalProps) {
-  const { portfolio, watchlist, executeTrade } = useApp();
+  const { portfolio, watchlist, totalPortfolioValue, executeTrade } = useApp();
   const [note, setNote] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
   const [tradeAction, setTradeAction] = useState<"buy" | "sell">("buy");
@@ -78,6 +81,18 @@ export default function StockDetailModal({
 
   const status = getStockStatus(stock.currentPrice, stock.levels);
   const statusStyle = getStatusColor(status);
+  const { buyScore, buyScoreLabel } = calculateBuyZoneScore({
+    status,
+    rsi14: stock.rsi14,
+    holding: holding ?? null,
+    totalPortfolioValue,
+    category: stock.category,
+  });
+  const actionAmount = getActionAmountLabel({
+    buyScore,
+    category: stock.category,
+    recommendation: stock.recommendation,
+  });
 
   const chartData = priceHistory.slice(-30).map((p) => ({
     date: p.date.slice(5),
@@ -210,7 +225,7 @@ export default function StockDetailModal({
         </div>
 
         {/* Market metrics */}
-        <div className="px-5 py-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="px-5 py-3 grid grid-cols-2 sm:grid-cols-6 gap-2">
           <div className="rounded-lg border border-[#1e2d45] bg-[#141d2e]/40 p-3">
             <p className="text-[10px] text-slate-600 uppercase tracking-wider mb-1">
               RSI 14
@@ -243,6 +258,27 @@ export default function StockDetailModal({
               {stock.dayLow && stock.dayHigh
                 ? `$${stock.dayLow.toFixed(2)} - $${stock.dayHigh.toFixed(2)}`
                 : "N/A"}
+            </p>
+          </div>
+          <div className="rounded-lg border border-[#1e2d45] bg-[#141d2e]/40 p-3">
+            <p className="text-[10px] text-slate-600 uppercase tracking-wider mb-1">
+              Buy Score
+            </p>
+            <p
+              className={clsx(
+                "inline-flex rounded-md border px-2 py-0.5 text-[11px] font-semibold",
+                getBuyScoreColor(buyScore)
+              )}
+            >
+              {buyScore} · {buyScoreLabel}
+            </p>
+          </div>
+          <div className="rounded-lg border border-[#1e2d45] bg-[#141d2e]/40 p-3">
+            <p className="text-[10px] text-slate-600 uppercase tracking-wider mb-1">
+              Action
+            </p>
+            <p className="text-[13px] font-semibold text-slate-200">
+              {actionAmount}
             </p>
           </div>
         </div>

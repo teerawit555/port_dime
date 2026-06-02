@@ -7,6 +7,9 @@ import {
   getStatusColor,
   getRecommendationColor,
   getRsiColor,
+  calculateBuyZoneScore,
+  getActionAmountLabel,
+  getBuyScoreColor,
 } from "@/lib/utils";
 import Badge from "@/components/ui/Badge";
 import { clsx } from "clsx";
@@ -17,7 +20,7 @@ interface WatchlistTableProps {
 }
 
 export default function WatchlistTable({ onSelectStock }: WatchlistTableProps) {
-  const { watchlist } = useApp();
+  const { portfolio, watchlist, totalPortfolioValue } = useApp();
   const [sortKey, setSortKey] = useState<string>("symbol");
   const [sortDir, setSortDir] = useState<1 | -1>(1);
 
@@ -30,6 +33,20 @@ export default function WatchlistTable({ onSelectStock }: WatchlistTableProps) {
   }
 
   const sorted = [...watchlist].sort((a, b) => {
+    const getScore = (symbol: string) => {
+      const stock = watchlist.find((item) => item.symbol === symbol);
+      if (!stock) return 0;
+      const holding =
+        portfolio.holdings.find((item) => item.symbol === symbol) ?? null;
+      return calculateBuyZoneScore({
+        status: stock.status,
+        rsi14: stock.rsi14,
+        holding,
+        totalPortfolioValue,
+        category: stock.category,
+      }).buyScore;
+    };
+
     if (sortKey === "symbol") return a.symbol.localeCompare(b.symbol) * sortDir;
     if (sortKey === "price")
       return (a.currentPrice - b.currentPrice) * sortDir;
@@ -39,6 +56,8 @@ export default function WatchlistTable({ onSelectStock }: WatchlistTableProps) {
       return ((a.rsi14 ?? -1) - (b.rsi14 ?? -1)) * sortDir;
     if (sortKey === "pe")
       return ((a.peRatio ?? -1) - (b.peRatio ?? -1)) * sortDir;
+    if (sortKey === "score")
+      return (getScore(a.symbol) - getScore(b.symbol)) * sortDir;
     return 0;
   });
 
@@ -63,6 +82,7 @@ export default function WatchlistTable({ onSelectStock }: WatchlistTableProps) {
                 { key: "change", label: "Change" },
                 { key: "rsi", label: "RSI" },
                 { key: "pe", label: "P/E" },
+                { key: "score", label: "Score" },
               ].map(({ key, label }) => (
                 <th
                   key={key}
@@ -76,10 +96,28 @@ export default function WatchlistTable({ onSelectStock }: WatchlistTableProps) {
               <th className="text-left px-3 py-2.5">Resistance</th>
               <th className="text-left px-3 py-2.5">Status</th>
               <th className="text-left px-4 py-2.5">Recommend</th>
+              <th className="text-left px-4 py-2.5">Action Amount</th>
             </tr>
           </thead>
           <tbody>
-            {sorted.map((stock) => (
+            {sorted.map((stock) => {
+              const holding =
+                portfolio.holdings.find((item) => item.symbol === stock.symbol) ??
+                null;
+              const { buyScore, buyScoreLabel } = calculateBuyZoneScore({
+                status: stock.status,
+                rsi14: stock.rsi14,
+                holding,
+                totalPortfolioValue,
+                category: stock.category,
+              });
+              const actionAmount = getActionAmountLabel({
+                buyScore,
+                category: stock.category,
+                recommendation: stock.recommendation,
+              });
+
+              return (
               <tr
                 key={stock.symbol}
                 className="table-row-hover border-t border-[#162035] cursor-pointer"
@@ -109,6 +147,16 @@ export default function WatchlistTable({ onSelectStock }: WatchlistTableProps) {
                 </td>
                 <td className="px-4 py-3 text-slate-300">
                   {formatOptionalNumber(stock.peRatio ?? stock.forwardPeRatio, 1)}
+                </td>
+                <td className="px-4 py-3">
+                  <span
+                    className={clsx(
+                      "inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-semibold",
+                      getBuyScoreColor(buyScore)
+                    )}
+                  >
+                    {buyScore} · {buyScoreLabel}
+                  </span>
                 </td>
                 <td className="px-3 py-3">
                   <div className="flex gap-1 text-emerald-400/70 text-[11px]">
@@ -148,8 +196,12 @@ export default function WatchlistTable({ onSelectStock }: WatchlistTableProps) {
                     {stock.recommendation}
                   </span>
                 </td>
+                <td className="px-4 py-3 text-[11px] font-medium text-slate-300">
+                  {actionAmount}
+                </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

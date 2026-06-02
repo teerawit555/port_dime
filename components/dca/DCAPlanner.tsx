@@ -3,10 +3,9 @@ import { useState, useMemo } from "react";
 import { useApp } from "@/lib/context";
 import {
   calculateDCAAllocations,
-  formatCurrency,
   getRiskColor,
   getStatusColor,
-  getRecommendationColor,
+  getBuyScoreColor,
 } from "@/lib/utils";
 import Badge from "@/components/ui/Badge";
 import { clsx } from "clsx";
@@ -28,6 +27,7 @@ export default function DCAPlanner() {
         levels: w.levels,
         status: w.status,
         category: w.category,
+        rsi14: w.rsi14,
       })),
       totalPortfolioValue
     );
@@ -127,6 +127,8 @@ export default function DCAPlanner() {
               <tr className="text-slate-600 text-[11px] uppercase tracking-wider">
                 <th className="text-left px-4 py-2.5">Symbol</th>
                 <th className="text-left px-3 py-2.5">Status</th>
+                <th className="text-left px-3 py-2.5">Buy Score</th>
+                <th className="text-right px-3 py-2.5">Action Amount</th>
                 <th className="text-right px-3 py-2.5">งบแนะนำ</th>
                 <th className="text-right px-3 py-2.5">ราคาเป้า</th>
                 <th className="text-left px-3 py-2.5">เหตุผล</th>
@@ -158,6 +160,19 @@ export default function DCAPlanner() {
                       >
                         {rec.status}
                       </Badge>
+                    </td>
+                    <td className="px-3 py-3">
+                      <span
+                        className={clsx(
+                          "inline-flex rounded-md border px-2 py-0.5 text-[10px] font-semibold",
+                          getBuyScoreColor(rec.buyScore)
+                        )}
+                      >
+                        {rec.buyScore} · {rec.buyScoreLabel}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 text-right text-slate-300 font-medium">
+                      {rec.actionAmountLabel}
                     </td>
                     <td className="px-3 py-3 text-right">
                       {rec.recommendedBudget > 0 ? (

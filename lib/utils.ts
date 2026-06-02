@@ -427,6 +427,13 @@ export function getRiskColor(risk: RiskLevel): string {
   }
 }
 
+export function getBuyScoreColor(score: number): string {
+  if (score >= 80) return "text-emerald-400 bg-emerald-400/10 border-emerald-400/30";
+  if (score >= 60) return "text-blue-400 bg-blue-400/10 border-blue-400/30";
+  if (score >= 40) return "text-amber-400 bg-amber-400/10 border-amber-400/30";
+  return "text-red-400 bg-red-400/10 border-red-400/30";
+}
+
 export function getRsiColor(rsi: number | null | undefined): string {
   if (rsi === null || rsi === undefined) return "text-slate-500";
   if (rsi > 70) return "text-red-400";
