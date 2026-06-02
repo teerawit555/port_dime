@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# netlify temp upload
+.netlify-upload/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
