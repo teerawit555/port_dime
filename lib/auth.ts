@@ -1,13 +1,24 @@
 export const AUTH_COOKIE_NAME = "stockdesk_auth";
 
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
+const FALLBACK_PASSWORD_HASH =
+  "33eb62de9d5b3df8fe6e3ad9384cc7611ecc73d301f35d5b8f680475f1080b05";
 
 function getSecret() {
-  return process.env.AUTH_SECRET ?? process.env.APP_PASSWORD ?? "stockdesk-dev";
+  return (
+    process.env.AUTH_SECRET ??
+    process.env.APP_PASSWORD ??
+    process.env.APP_PASSWORD_SHA256 ??
+    FALLBACK_PASSWORD_HASH
+  );
 }
 
 export function isAuthEnabled() {
-  return Boolean(process.env.APP_PASSWORD);
+  return Boolean(
+    process.env.APP_PASSWORD ??
+      process.env.APP_PASSWORD_SHA256 ??
+      FALLBACK_PASSWORD_HASH
+  );
 }
 
 async function sha256(input: string) {
@@ -23,7 +34,11 @@ export async function createAuthToken() {
 }
 
 export async function verifyPassword(password: string) {
-  return isAuthEnabled() && password === process.env.APP_PASSWORD;
+  if (!isAuthEnabled()) return false;
+  if (process.env.APP_PASSWORD) return password === process.env.APP_PASSWORD;
+
+  const expectedHash = process.env.APP_PASSWORD_SHA256 ?? FALLBACK_PASSWORD_HASH;
+  return (await sha256(password)) === expectedHash;
 }
 
 export function authCookieOptions() {
