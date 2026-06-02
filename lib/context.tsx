@@ -15,6 +15,7 @@ import {
   MarketSnapshot,
   MarketSyncStatus,
   ExecuteTradeInput,
+  PortfolioHolding,
 } from "@/types";
 import {
   mockPortfolio,
@@ -71,6 +72,112 @@ function mergeDefaultWatchlist(watchlist: StockWatchlistItem[]) {
     : watchlist;
 }
 
+function migrateLegacySeedPortfolio(portfolio: Portfolio) {
+  return isLegacySeedPortfolio(portfolio)
+    ? {
+        ...mockPortfolio,
+        cashBalance: portfolio.cashBalance,
+        totalInvested: portfolio.totalInvested,
+      }
+    : portfolio;
+}
+
+type RepairedHoldingDraft = {
+  shares: number;
+  costBasis: number;
+  lastPrice: number;
+};
+
+function getExecutedShares(entry: InvestmentLogEntry) {
+  const priceUsd = entry.actualPrice ?? entry.targetPrice;
+  const exchangeRate = entry.exchangeRate ?? DEFAULT_USD_THB_RATE;
+
+  if (entry.shares && entry.shares > 0) return entry.shares;
+  if (entry.amount <= 0 || priceUsd <= 0 || exchangeRate <= 0) return null;
+
+  const shares = entry.amount / exchangeRate / priceUsd;
+  return Number.isFinite(shares) && shares > 0 ? shares : null;
+}
+
+function repairMissingHoldingsFromExecutedLogs(
+  portfolio: Portfolio,
+  logs: InvestmentLogEntry[],
+  watchlist: StockWatchlistItem[]
+) {
+  const activeSymbols = new Set(
+    portfolio.holdings
+      .filter((holding) => holding.shares > 0)
+      .map((holding) => holding.symbol)
+  );
+  const watchlistBySymbol = new Map(
+    watchlist.map((stock) => [stock.symbol, stock])
+  );
+  const drafts = new Map<string, RepairedHoldingDraft>();
+
+  const executedLogs = [...logs]
+    .filter((entry) => entry.status === "executed")
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  for (const entry of executedLogs) {
+    if (activeSymbols.has(entry.symbol)) continue;
+
+    const shares = getExecutedShares(entry);
+    const priceUsd = entry.actualPrice ?? entry.targetPrice;
+    if (!shares || priceUsd <= 0) continue;
+
+    const action = entry.action ?? "buy";
+    const draft =
+      drafts.get(entry.symbol) ?? {
+        shares: 0,
+        costBasis: 0,
+        lastPrice: priceUsd,
+      };
+
+    if (action === "buy") {
+      draft.shares += shares;
+      draft.costBasis += shares * priceUsd;
+    } else {
+      const sharesToSell = Math.min(draft.shares, shares);
+      const avgCost = draft.shares > 0 ? draft.costBasis / draft.shares : 0;
+      draft.shares = Math.max(0, draft.shares - sharesToSell);
+      draft.costBasis = Math.max(0, draft.costBasis - sharesToSell * avgCost);
+    }
+
+    draft.lastPrice = priceUsd;
+    drafts.set(entry.symbol, draft);
+  }
+
+  const repairedHoldings: PortfolioHolding[] = [];
+  drafts.forEach((draft, symbol) => {
+    if (draft.shares <= 0 || activeSymbols.has(symbol)) return;
+
+    const stock = watchlistBySymbol.get(symbol);
+    repairedHoldings.push({
+      symbol,
+      companyName: stock?.companyName ?? symbol,
+      shares: draft.shares,
+      avgCost: draft.costBasis / draft.shares,
+      currentPrice: stock?.currentPrice ?? draft.lastPrice,
+      previousClose: stock?.previousClose,
+      changePercent: stock?.changePercent,
+      peRatio: stock?.peRatio,
+      forwardPeRatio: stock?.forwardPeRatio,
+      rsi14: stock?.rsi14,
+      quoteUpdatedAt: stock?.quoteUpdatedAt,
+      dataSource: stock?.dataSource,
+      allocationPercent: 0,
+      category: stock?.category ?? "Tech",
+    });
+  });
+
+  return repairedHoldings.length > 0
+    ? {
+        ...portfolio,
+        holdings: [...portfolio.holdings, ...repairedHoldings],
+      }
+    : portfolio;
+}
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [portfolio, setPortfolio] = useState<Portfolio>(mockPortfolio);
   const [watchlist, setWatchlist] = useState<StockWatchlistItem[]>(mockWatchlist);
@@ -86,12 +193,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const savedPortfolio = loadFromStorage("PORTFOLIO", mockPortfolio);
     const savedWatchlist = loadFromStorage("WATCHLIST", mockWatchlist);
     const savedLog = loadFromStorage("LOG", mockInvestmentLog);
-    const portfolioToUse = isLegacySeedPortfolio(savedPortfolio)
-      ? mockPortfolio
-      : savedPortfolio;
     const watchlistToUse = isLegacySeedWatchlist(savedWatchlist)
       ? mockWatchlist
       : mergeDefaultWatchlist(savedWatchlist);
+    const migratedPortfolio = migrateLegacySeedPortfolio(savedPortfolio);
+    const portfolioToUse = repairMissingHoldingsFromExecutedLogs(
+      migratedPortfolio,
+      savedLog,
+      watchlistToUse
+    );
 
     setPortfolio(portfolioToUse);
     setWatchlist(watchlistToUse);

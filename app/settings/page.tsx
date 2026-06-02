@@ -16,16 +16,16 @@ type BackupPayload = {
 
 export default function SettingsPage() {
   const { portfolio, updatePortfolio, updateWatchlist } = useApp();
-  const [cashBalance, setCashBalance] = useState(
-    portfolio.cashBalance.toString()
-  );
+  const [cashDraft, setCashDraft] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [resetConfirm, setResetConfirm] = useState(false);
   const [backupMessage, setBackupMessage] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cashBalanceValue = cashDraft ?? portfolio.cashBalance.toString();
 
   function handleSaveCash() {
-    updatePortfolio({ ...portfolio, cashBalance: parseFloat(cashBalance) || 0 });
+    updatePortfolio({ ...portfolio, cashBalance: parseFloat(cashBalanceValue) || 0 });
+    setCashDraft(null);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   }
@@ -115,8 +115,8 @@ export default function SettingsPage() {
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">฿</span>
               <input
                 type="number"
-                value={cashBalance}
-                onChange={(e) => setCashBalance(e.target.value)}
+                value={cashBalanceValue}
+                onChange={(e) => setCashDraft(e.target.value)}
                 className="w-full bg-[#141d2e] border border-[#1e2d45] rounded-lg pl-7 pr-3 py-2.5 text-[13px] text-slate-200 outline-none focus:border-blue-500/50"
               />
             </div>
