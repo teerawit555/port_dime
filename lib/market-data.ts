@@ -437,8 +437,8 @@ async function buildMarketSnapshot(
     asFiniteNumber(summary?.summaryDetail?.previousClose?.raw) ??
     asFiniteNumber(summary?.summaryDetail?.regularMarketPreviousClose?.raw) ??
     asFiniteNumber(chartMeta?.previousClose) ??
-    asFiniteNumber(chartMeta?.chartPreviousClose) ??
     priceHistory.at(-2)?.price ??
+    asFiniteNumber(chartMeta?.chartPreviousClose) ??
     currentPrice;
 
   if (currentPrice === undefined || previousClose === undefined) {
