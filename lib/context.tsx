@@ -21,7 +21,7 @@ import {
   mockWatchlist,
   mockInvestmentLog,
 } from "@/data/mockData";
-import { saveToStorage, loadFromStorage, getStockStatus, getRecommendation, calcPortfolioMetrics, generateId } from "@/lib/utils";
+import { saveToStorage, loadFromStorage, getStockStatus, getRecommendation, calcPortfolioMetrics, generateId, DEFAULT_USD_THB_RATE } from "@/lib/utils";
 
 const MARKET_REFRESH_INTERVAL_MS = 60 * 1000;
 
@@ -33,6 +33,7 @@ interface AppContextType {
   marketStatus: MarketSyncStatus;
   refreshMarketData: () => Promise<void>;
   executeTrade: (input: ExecuteTradeInput) => { ok: boolean; message?: string };
+  executeLogEntry: (id: string) => { ok: boolean; message?: string };
   updatePortfolio: (p: Portfolio) => void;
   updateWatchlist: (w: StockWatchlistItem[]) => void;
   addLogEntry: (entry: InvestmentLogEntry) => void;
@@ -361,6 +362,116 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return { ok: true };
   }, [portfolio]);
 
+  const executeLogEntry = useCallback((id: string) => {
+    const entry = investmentLog.find((logEntry) => logEntry.id === id);
+    if (!entry) return { ok: false, message: "ไม่พบรายการนี้" };
+    if (entry.status !== "planned") {
+      return { ok: false, message: "รายการนี้ไม่ได้อยู่ในสถานะ planned" };
+    }
+
+    const action = entry.action ?? "buy";
+    const amountThb = entry.amount;
+    const priceUsd = entry.actualPrice ?? entry.targetPrice;
+    const exchangeRate = entry.exchangeRate ?? DEFAULT_USD_THB_RATE;
+
+    if (amountThb <= 0 || priceUsd <= 0 || exchangeRate <= 0) {
+      return { ok: false, message: "ข้อมูลจำนวนเงินหรือราคาไม่ถูกต้อง" };
+    }
+
+    const amountUsd = amountThb / exchangeRate;
+    const executedShares = amountUsd / priceUsd;
+    const existing = portfolio.holdings.find((h) => h.symbol === entry.symbol);
+    const watchlistStock = watchlist.find((stock) => stock.symbol === entry.symbol);
+
+    if (action === "sell") {
+      if (!existing || existing.shares <= 0) {
+        return { ok: false, message: "ยังไม่มีหุ้นตัวนี้ให้ขาย" };
+      }
+      if (executedShares > existing.shares + 0.000001) {
+        return { ok: false, message: "จำนวนขายมากกว่าหุ้นที่ถืออยู่" };
+      }
+    }
+
+    let updatedHoldings = portfolio.holdings;
+    let cashBalance = portfolio.cashBalance;
+    let realizedPnL: number | undefined;
+
+    if (action === "buy") {
+      cashBalance -= amountThb;
+      if (existing) {
+        updatedHoldings = portfolio.holdings.map((holding) => {
+          if (holding.symbol !== entry.symbol) return holding;
+          const nextShares = holding.shares + executedShares;
+          const nextAvgCost =
+            nextShares > 0
+              ? (holding.shares * holding.avgCost +
+                  executedShares * priceUsd) /
+                nextShares
+              : priceUsd;
+          return {
+            ...holding,
+            shares: nextShares,
+            avgCost: nextAvgCost,
+            currentPrice: priceUsd,
+          };
+        });
+      } else {
+        updatedHoldings = [
+          ...portfolio.holdings,
+          {
+            symbol: entry.symbol,
+            companyName: watchlistStock?.companyName ?? entry.symbol,
+            shares: executedShares,
+            avgCost: priceUsd,
+            currentPrice: priceUsd,
+            allocationPercent: 0,
+            category: watchlistStock?.category ?? "Tech",
+          },
+        ];
+      }
+    } else if (existing) {
+      realizedPnL =
+        (priceUsd - existing.avgCost) * executedShares * exchangeRate;
+      cashBalance += amountThb;
+      updatedHoldings = portfolio.holdings.map((holding) =>
+        holding.symbol === entry.symbol
+          ? {
+              ...holding,
+              shares: Math.max(0, holding.shares - executedShares),
+              currentPrice: priceUsd,
+            }
+          : holding
+      );
+    }
+
+    const updatedPortfolio = {
+      ...portfolio,
+      cashBalance,
+      holdings: updatedHoldings,
+    };
+    setPortfolio(updatedPortfolio);
+    saveToStorage("PORTFOLIO", updatedPortfolio);
+
+    setInvestmentLog((prev) => {
+      const updated = prev.map((logEntry) =>
+        logEntry.id === id
+          ? {
+              ...logEntry,
+              status: "executed" as const,
+              actualPrice: priceUsd,
+              shares: executedShares,
+              exchangeRate,
+              realizedPnL,
+            }
+          : logEntry
+      );
+      saveToStorage("LOG", updated);
+      return updated;
+    });
+
+    return { ok: true };
+  }, [investmentLog, portfolio, watchlist]);
+
   const addLogEntry = useCallback((entry: InvestmentLogEntry) => {
     setInvestmentLog((prev) => {
       const updated = [entry, ...prev];
@@ -398,6 +509,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         marketStatus,
         refreshMarketData,
         executeTrade,
+        executeLogEntry,
         updatePortfolio,
         updateWatchlist,
         addLogEntry,

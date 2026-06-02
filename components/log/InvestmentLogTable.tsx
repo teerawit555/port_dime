@@ -3,12 +3,12 @@ import { useState } from "react";
 import { useApp } from "@/lib/context";
 import { InvestmentStatus } from "@/types";
 import { clsx } from "clsx";
-import { Trash2, Check, X, Clock } from "lucide-react";
+import { Trash2, Check, X, Clock, type LucideIcon } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 
 const STATUS_CONFIG: Record<
   InvestmentStatus,
-  { label: string; color: string; icon: any }
+  { label: string; color: string; icon: LucideIcon }
 > = {
   planned: {
     label: "Planned",
@@ -28,7 +28,8 @@ const STATUS_CONFIG: Record<
 };
 
 export default function InvestmentLogTable() {
-  const { investmentLog, updateLogEntry, deleteLogEntry } = useApp();
+  const { investmentLog, updateLogEntry, deleteLogEntry, executeLogEntry } = useApp();
+  const [actionMessage, setActionMessage] = useState("");
   const [filterSymbol, setFilterSymbol] = useState("ALL");
   const [filterStatus, setFilterStatus] = useState<string>("ALL");
   const [filterAction, setFilterAction] = useState<string>("ALL");
@@ -198,13 +199,20 @@ export default function InvestmentLogTable() {
                           {entry.status === "planned" && (
                             <>
                               <button
-                                onClick={() =>
-                                  updateLogEntry(entry.id, {
-                                    status: "executed",
-                                  })
-                                }
+                                onClick={() => {
+                                  const result = executeLogEntry(entry.id);
+                                  setActionMessage(
+                                    result.ok
+                                      ? `${entry.symbol} อัปเดตเข้าพอร์ตแล้ว`
+                                      : result.message ?? "บันทึกรายการไม่สำเร็จ"
+                                  );
+                                  window.setTimeout(
+                                    () => setActionMessage(""),
+                                    1800
+                                  );
+                                }}
                                 className="w-6 h-6 rounded border border-emerald-700/40 bg-emerald-900/20 flex items-center justify-center text-emerald-500 hover:bg-emerald-900/40 transition-colors"
-                                title="Mark executed"
+                                title="Execute and update portfolio"
                               >
                                 <Check className="w-3 h-3" />
                               </button>
@@ -238,6 +246,9 @@ export default function InvestmentLogTable() {
           </div>
         )}
       </div>
+      {actionMessage && (
+        <p className="text-[11px] text-emerald-400">{actionMessage}</p>
+      )}
     </div>
   );
 }
