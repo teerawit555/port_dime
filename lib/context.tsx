@@ -46,9 +46,8 @@ function isLegacySeedPortfolio(portfolio: Portfolio) {
   const googl = portfolio.holdings.find((holding) => holding.symbol === "GOOGL");
   return Boolean(
     googl &&
-      ((Math.abs(googl.shares - 12.06) < 0.001 &&
-        Math.abs(googl.currentPrice - 175) < 0.001) ||
-        portfolio.holdings.some((holding) => holding.symbol === "ANET"))
+      Math.abs(googl.shares - 12.06) < 0.001 &&
+      Math.abs(googl.currentPrice - 175) < 0.001
   );
 }
 
