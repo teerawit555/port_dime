@@ -6,6 +6,7 @@ import {
   DCARecommendation,
   RiskLevel,
   StockCategory,
+  BuyZoneLabel,
 } from "@/types";
 
 // ─── Stock Status Logic ──────────────────────────────────────────────────────
@@ -65,6 +66,100 @@ export function getRiskLevel(
   return "กลาง";
 }
 
+function getCurrentAllocation(
+  holding: PortfolioHolding | null,
+  totalPortfolioValue: number
+) {
+  return holding && totalPortfolioValue > 0
+    ? (holding.shares * holding.currentPrice) / totalPortfolioValue
+    : 0;
+}
+
+export function getBuyZoneLabel(score: number): BuyZoneLabel {
+  if (score >= 80) return "น่าเก็บ";
+  if (score >= 60) return "ไม้เล็ก";
+  if (score >= 40) return "รอดู";
+  return "อย่าไล่";
+}
+
+export function calculateBuyZoneScore({
+  status,
+  rsi14,
+  holding,
+  totalPortfolioValue,
+  category,
+}: {
+  status: StockStatus;
+  rsi14?: number | null;
+  holding: PortfolioHolding | null;
+  totalPortfolioValue: number;
+  category: StockCategory;
+}) {
+  const currentAllocation = getCurrentAllocation(holding, totalPortfolioValue);
+  let score = 0;
+
+  if (status === "ใกล้แนวรับ" || status === "เด้งจากแนวรับ") score += 30;
+  else if (status === "รอดู") score += 15;
+  else if (status === "หลุดแนวรับ") score += 5;
+
+  if (typeof rsi14 === "number" && Number.isFinite(rsi14)) {
+    if (rsi14 >= 35 && rsi14 <= 55) score += 25;
+    else if (rsi14 > 55 && rsi14 <= 70) score += 15;
+    else if (rsi14 < 35) score += 18;
+  } else {
+    score += 10;
+  }
+
+  const allocationCap =
+    category === "ETF" ? 0.35 : category === "Growth" ? 0.08 : 0.15;
+  if (currentAllocation === 0) score += 20;
+  else if (currentAllocation <= allocationCap) score += 15;
+  else score += 5;
+
+  if (category === "ETF" || category === "Blue Chip") score += 15;
+  else if (category === "Tech") score += 12;
+  else score += 10;
+
+  if (status !== "ใกล้แนวต้าน" && status !== "Breakout") score += 10;
+
+  const buyScore = Math.max(0, Math.min(100, Math.round(score)));
+  return {
+    buyScore,
+    buyScoreLabel: getBuyZoneLabel(buyScore),
+  };
+}
+
+export function getActionAmountLabel({
+  buyScore,
+  category,
+  recommendation,
+}: {
+  buyScore: number;
+  category: StockCategory;
+  recommendation: StockRecommendation;
+}) {
+  if (
+    buyScore < 40 ||
+    recommendation === "ระวังไล่ราคา" ||
+    recommendation === "ไม่ควรซื้อตอนนี้"
+  ) {
+    return "0-300 บาท";
+  }
+
+  if (buyScore >= 80) {
+    if (category === "Growth") return "300-500 บาท";
+    if (category === "ETF") return "500-800 บาท";
+    return "500-700 บาท";
+  }
+
+  if (buyScore >= 60) {
+    if (category === "Growth") return "200-300 บาท";
+    return "300-500 บาท";
+  }
+
+  return "0-300 บาท";
+}
+
 // ─── DCA Planner ─────────────────────────────────────────────────────────────
 
 export function calculateDCAAllocations(
@@ -76,6 +171,7 @@ export function calculateDCAAllocations(
     levels: SupportResistance;
     status: StockStatus;
     category: StockCategory;
+    rsi14?: number | null;
   }>,
   totalPortfolioValue: number
 ): DCARecommendation[] {
@@ -91,6 +187,18 @@ export function calculateDCAAllocations(
       stock.category
     );
     const risk = getRiskLevel(stock.category, status);
+    const { buyScore, buyScoreLabel } = calculateBuyZoneScore({
+      status,
+      rsi14: stock.rsi14,
+      holding,
+      totalPortfolioValue,
+      category: stock.category,
+    });
+    const actionAmountLabel = getActionAmountLabel({
+      buyScore,
+      category: stock.category,
+      recommendation,
+    });
 
     let weight = 0;
     let reason = "";
@@ -142,6 +250,9 @@ export function calculateDCAAllocations(
       symbol: stock.symbol,
       status,
       recommendedBudget,
+      actionAmountLabel,
+      buyScore,
+      buyScoreLabel,
       targetPrice,
       reason,
       risk,
@@ -318,9 +429,11 @@ export function getRiskColor(risk: RiskLevel): string {
 
 export function getRsiColor(rsi: number | null | undefined): string {
   if (rsi === null || rsi === undefined) return "text-slate-500";
-  if (rsi < 30) return "text-emerald-400";
   if (rsi > 70) return "text-red-400";
-  return "text-slate-300";
+  if (rsi >= 55) return "text-emerald-400";
+  if (rsi >= 40) return "text-amber-400";
+  if (rsi < 35) return "text-cyan-400";
+  return "text-blue-300";
 }
 
 export function generateId(): string {

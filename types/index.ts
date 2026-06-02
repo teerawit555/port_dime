@@ -14,6 +14,7 @@ export type StockRecommendation =
   | "ไม่ควรซื้อตอนนี้";
 
 export type RiskLevel = "ต่ำ" | "กลาง" | "สูง";
+export type BuyZoneLabel = "น่าเก็บ" | "ไม้เล็ก" | "รอดู" | "อย่าไล่";
 
 export type InvestmentStatus = "planned" | "executed" | "skipped";
 export type TradeAction = "buy" | "sell";
@@ -113,6 +114,9 @@ export interface DCARecommendation {
   symbol: string;
   status: StockStatus;
   recommendedBudget: number;
+  actionAmountLabel: string;
+  buyScore: number;
+  buyScoreLabel: BuyZoneLabel;
   targetPrice: number;
   reason: string;
   risk: RiskLevel;
