@@ -175,6 +175,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             previousClose: snapshot.previousClose,
             changePercent: snapshot.changePercent,
             peRatio: snapshot.peRatio,
+            forwardPeRatio: snapshot.forwardPeRatio,
             rsi14: snapshot.rsi14,
             quoteUpdatedAt: snapshot.quoteUpdatedAt,
             dataSource: snapshot.source,

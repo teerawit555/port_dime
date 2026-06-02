@@ -31,7 +31,17 @@ interface StockDetailModalProps {
   onClose: () => void;
 }
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+type ChartTooltipPayload = {
+  value?: number;
+};
+
+type CustomTooltipProps = {
+  active?: boolean;
+  payload?: ChartTooltipPayload[];
+  label?: string;
+};
+
+const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-[#0d1220] border border-[#1e2d45] rounded-lg px-2.5 py-2 text-[11px]">
@@ -62,9 +72,9 @@ export default function StockDetailModal({
 
   if (!stock) return null;
 
-  const { currentValue, pnl, pnlPercent } = holding
+  const { pnl, pnlPercent } = holding
     ? calcHoldingMetrics(holding)
-    : { currentValue: 0, pnl: 0, pnlPercent: 0 };
+    : { pnl: 0, pnlPercent: 0 };
 
   const status = getStockStatus(stock.currentPrice, stock.levels);
   const statusStyle = getStatusColor(status);
@@ -214,7 +224,7 @@ export default function StockDetailModal({
               P/E
             </p>
             <p className="text-[14px] font-semibold text-slate-200">
-              {formatOptionalNumber(stock.peRatio, 1)}
+              {formatOptionalNumber(stock.peRatio ?? stock.forwardPeRatio, 1)}
             </p>
           </div>
           <div className="rounded-lg border border-[#1e2d45] bg-[#141d2e]/40 p-3">

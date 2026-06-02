@@ -2,6 +2,7 @@ import type { MarketSnapshot, PricePoint, SupportResistance } from "@/types";
 
 const SOURCE = "Yahoo Finance";
 const FINNHUB_SOURCE = "Finnhub";
+const STOOQ_SOURCE = "Stooq";
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
 const KNOWN_COMPANY_NAMES: Record<string, string> = {
@@ -41,10 +42,20 @@ type YahooChartResult = {
     symbol?: string;
     regularMarketPrice?: number;
     previousClose?: number;
+    chartPreviousClose?: number;
     currency?: string;
+    regularMarketDayHigh?: number;
+    regularMarketDayLow?: number;
+    regularMarketVolume?: number;
+    regularMarketTime?: number;
+    longName?: string;
+    shortName?: string;
   };
   indicators?: {
     quote?: Array<{
+      open?: Array<number | null>;
+      high?: Array<number | null>;
+      low?: Array<number | null>;
       close?: Array<number | null>;
       volume?: Array<number | null>;
     }>;
@@ -99,6 +110,20 @@ type FinnhubMetrics = {
   };
 };
 
+type YahooChartMeta = NonNullable<YahooChartResult["meta"]>;
+
+type PriceHistoryResult = {
+  points: PricePoint[];
+  meta?: YahooChartMeta;
+};
+
+type StooqQuote = {
+  dayHigh?: number;
+  dayLow?: number;
+  volume?: number;
+  currentPrice?: number;
+};
+
 function asFiniteNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
@@ -130,6 +155,23 @@ async function fetchJson<T>(url: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function fetchText(url: string): Promise<string> {
+  const res = await fetch(url, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(12000),
+    headers: {
+      Accept: "text/csv,text/plain,*/*",
+      "User-Agent": USER_AGENT,
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Market data request failed (${res.status})`);
+  }
+
+  return res.text();
+}
+
 async function fetchQuotes(symbols: string[]) {
   if (symbols.length === 0) return new Map<string, YahooQuote>();
 
@@ -147,7 +189,7 @@ async function fetchQuotes(symbols: string[]) {
   return map;
 }
 
-async function fetchPriceHistory(symbol: string): Promise<PricePoint[]> {
+async function fetchPriceHistory(symbol: string): Promise<PriceHistoryResult> {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
     symbol
   )}?range=6mo&interval=1d`;
@@ -155,6 +197,9 @@ async function fetchPriceHistory(symbol: string): Promise<PricePoint[]> {
   const result = json.chart?.result?.[0];
   const timestamps = result?.timestamp ?? [];
   const quote = result?.indicators?.quote?.[0];
+  const opens = quote?.open ?? [];
+  const highs = quote?.high ?? [];
+  const lows = quote?.low ?? [];
   const closes = quote?.close ?? [];
   const volumes = quote?.volume ?? [];
 
@@ -164,15 +209,21 @@ async function fetchPriceHistory(symbol: string): Promise<PricePoint[]> {
     const price = asFiniteNumber(closes[index]);
     if (price === undefined) return;
 
+    const open = asFiniteNumber(opens[index]);
+    const high = asFiniteNumber(highs[index]);
+    const low = asFiniteNumber(lows[index]);
     const volume = asFiniteNumber(volumes[index]);
     points.push({
       date: new Date(timestamp * 1000).toISOString().slice(0, 10),
       price,
+      ...(open === undefined ? {} : { open }),
+      ...(high === undefined ? {} : { high }),
+      ...(low === undefined ? {} : { low }),
       ...(volume === undefined ? {} : { volume }),
     });
   });
 
-  return points;
+  return { points, meta: result?.meta };
 }
 
 async function fetchQuoteSummary(symbol: string): Promise<YahooQuoteSummary | null> {
@@ -202,6 +253,38 @@ async function fetchFinnhubData(symbol: string) {
   return {
     quote: quoteResult.status === "fulfilled" ? quoteResult.value : null,
     metrics: metricsResult.status === "fulfilled" ? metricsResult.value : null,
+  };
+}
+
+async function fetchStooqQuote(symbol: string): Promise<StooqQuote | null> {
+  const stooqSymbol = `${symbol.toLowerCase()}.us`;
+  const url = `https://stooq.com/q/l/?s=${encodeURIComponent(
+    stooqSymbol
+  )}&f=sd2t2ohlcv&h&e=csv`;
+  const csv = await fetchText(url);
+  const [, row] = csv.trim().split(/\r?\n/);
+  if (!row) return null;
+
+  const [, , , , highRaw, lowRaw, closeRaw, volumeRaw] = row.split(",");
+  const dayHigh = asFiniteNumber(Number(highRaw));
+  const dayLow = asFiniteNumber(Number(lowRaw));
+  const currentPrice = asFiniteNumber(Number(closeRaw));
+  const volume = asFiniteNumber(Number(volumeRaw));
+
+  if (
+    dayHigh === undefined &&
+    dayLow === undefined &&
+    currentPrice === undefined &&
+    volume === undefined
+  ) {
+    return null;
+  }
+
+  return {
+    dayHigh,
+    dayLow,
+    currentPrice,
+    volume,
   };
 }
 
@@ -319,11 +402,13 @@ async function buildMarketSnapshot(
   symbol: string,
   quoteMap: Map<string, YahooQuote>
 ) {
-  const [historyResult, summaryResult, finnhubResult] = await Promise.allSettled([
-    fetchPriceHistory(symbol),
-    fetchQuoteSummary(symbol),
-    fetchFinnhubData(symbol),
-  ]);
+  const [historyResult, summaryResult, finnhubResult, stooqResult] =
+    await Promise.allSettled([
+      fetchPriceHistory(symbol),
+      fetchQuoteSummary(symbol),
+      fetchFinnhubData(symbol),
+      fetchStooqQuote(symbol),
+    ]);
   const quote = quoteMap.get(symbol);
   const summary =
     summaryResult.status === "fulfilled" ? summaryResult.value : null;
@@ -332,18 +417,27 @@ async function buildMarketSnapshot(
   const finnhubQuote = finnhub?.quote;
   const finnhubMetrics = finnhub?.metrics?.metric;
   const priceHistory =
-    historyResult.status === "fulfilled" ? historyResult.value : [];
+    historyResult.status === "fulfilled" ? historyResult.value.points : [];
+  const chartMeta =
+    historyResult.status === "fulfilled" ? historyResult.value.meta : undefined;
+  const stooqQuote =
+    stooqResult.status === "fulfilled" ? stooqResult.value : null;
   const latestHistoryPrice = priceHistory.at(-1)?.price;
+  const latestHistoryPoint = priceHistory.at(-1);
   const currentPrice =
     asFiniteNumber(finnhubQuote?.c) ??
     asFiniteNumber(quote?.regularMarketPrice) ??
     asFiniteNumber(summary?.price?.regularMarketPrice?.raw) ??
-    latestHistoryPrice;
+    asFiniteNumber(chartMeta?.regularMarketPrice) ??
+    latestHistoryPrice ??
+    stooqQuote?.currentPrice;
   const previousClose =
     asFiniteNumber(finnhubQuote?.pc) ??
     asFiniteNumber(quote?.regularMarketPreviousClose) ??
     asFiniteNumber(summary?.summaryDetail?.previousClose?.raw) ??
     asFiniteNumber(summary?.summaryDetail?.regularMarketPreviousClose?.raw) ??
+    asFiniteNumber(chartMeta?.previousClose) ??
+    asFiniteNumber(chartMeta?.chartPreviousClose) ??
     priceHistory.at(-2)?.price ??
     currentPrice;
 
@@ -361,32 +455,51 @@ async function buildMarketSnapshot(
     asFiniteNumber(finnhubQuote?.dp) ??
     asFiniteNumber(quote?.regularMarketChangePercent) ??
     (previousClose > 0 ? (changeAmount / previousClose) * 100 : 0);
+  const dayHigh =
+    asFiniteNumber(finnhubQuote?.h) ??
+    asFiniteNumber(quote?.regularMarketDayHigh) ??
+    asFiniteNumber(summary?.summaryDetail?.dayHigh?.raw) ??
+    asFiniteNumber(chartMeta?.regularMarketDayHigh) ??
+    latestHistoryPoint?.high ??
+    stooqQuote?.dayHigh;
+  const dayLow =
+    asFiniteNumber(finnhubQuote?.l) ??
+    asFiniteNumber(quote?.regularMarketDayLow) ??
+    asFiniteNumber(summary?.summaryDetail?.dayLow?.raw) ??
+    asFiniteNumber(chartMeta?.regularMarketDayLow) ??
+    latestHistoryPoint?.low ??
+    stooqQuote?.dayLow;
+  const volume =
+    asFiniteNumber(quote?.regularMarketVolume) ??
+    asFiniteNumber(summary?.summaryDetail?.volume?.raw) ??
+    asFiniteNumber(chartMeta?.regularMarketVolume) ??
+    latestHistoryPoint?.volume ??
+    stooqQuote?.volume;
+  const sourceParts = [
+    finnhub ? FINNHUB_SOURCE : null,
+    SOURCE,
+    stooqQuote ? STOOQ_SOURCE : null,
+  ].filter(Boolean);
 
   return {
     symbol,
     companyName:
       quote?.longName ??
       summary?.price?.longName ??
+      chartMeta?.longName ??
       KNOWN_COMPANY_NAMES[symbol] ??
       quote?.shortName ??
       summary?.price?.shortName ??
+      chartMeta?.shortName ??
       symbol,
     currentPrice,
     previousClose,
     changeAmount,
     changePercent,
-    currency: quote?.currency ?? summary?.price?.currency ?? "USD",
-    dayHigh:
-      asFiniteNumber(finnhubQuote?.h) ??
-      asFiniteNumber(quote?.regularMarketDayHigh) ??
-      asFiniteNumber(summary?.summaryDetail?.dayHigh?.raw),
-    dayLow:
-      asFiniteNumber(finnhubQuote?.l) ??
-      asFiniteNumber(quote?.regularMarketDayLow) ??
-      asFiniteNumber(summary?.summaryDetail?.dayLow?.raw),
-    volume:
-      asFiniteNumber(quote?.regularMarketVolume) ??
-      asFiniteNumber(summary?.summaryDetail?.volume?.raw),
+    currency: quote?.currency ?? summary?.price?.currency ?? chartMeta?.currency ?? "USD",
+    dayHigh,
+    dayLow,
+    volume,
     marketCap:
       asFiniteNumber(quote?.marketCap) ??
       asFiniteNumber(summary?.price?.marketCap?.raw) ??
@@ -410,13 +523,16 @@ async function buildMarketSnapshot(
     rsi14: calculateRsi(priceHistory),
     levels: calculateSupportResistance(priceHistory, currentPrice),
     marketTime:
-      finnhubQuote?.t || quote?.regularMarketTime
+      finnhubQuote?.t || quote?.regularMarketTime || chartMeta?.regularMarketTime
         ? new Date(
-            (finnhubQuote?.t ?? quote?.regularMarketTime ?? 0) * 1000
+            (finnhubQuote?.t ??
+              quote?.regularMarketTime ??
+              chartMeta?.regularMarketTime ??
+              0) * 1000
           ).toISOString()
         : undefined,
     quoteUpdatedAt: new Date().toISOString(),
-    source: finnhub ? `${FINNHUB_SOURCE} + ${SOURCE}` : SOURCE,
+    source: Array.from(new Set(sourceParts)).join(" + "),
     priceHistory,
   } satisfies MarketSnapshot;
 }

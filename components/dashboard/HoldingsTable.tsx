@@ -92,7 +92,7 @@ export default function HoldingsTable({
                     {formatOptionalNumber(h.rsi14, 1)}
                   </td>
                   <td className="px-3 py-3 text-right text-slate-400">
-                    {formatOptionalNumber(h.peRatio, 1)}
+                    {formatOptionalNumber(h.peRatio ?? h.forwardPeRatio, 1)}
                   </td>
                   <td className="px-3 py-3 text-right text-slate-200">
                     {formatCurrency(currentValueThb, "THB")}

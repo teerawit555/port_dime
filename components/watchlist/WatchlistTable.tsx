@@ -108,7 +108,7 @@ export default function WatchlistTable({ onSelectStock }: WatchlistTableProps) {
                   {formatOptionalNumber(stock.rsi14, 1)}
                 </td>
                 <td className="px-4 py-3 text-slate-300">
-                  {formatOptionalNumber(stock.peRatio, 1)}
+                  {formatOptionalNumber(stock.peRatio ?? stock.forwardPeRatio, 1)}
                 </td>
                 <td className="px-3 py-3">
                   <div className="flex gap-1 text-emerald-400/70 text-[11px]">

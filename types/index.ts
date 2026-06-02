@@ -60,6 +60,7 @@ export interface PortfolioHolding {
   previousClose?: number;
   changePercent?: number;
   peRatio?: number | null;
+  forwardPeRatio?: number | null;
   rsi14?: number | null;
   quoteUpdatedAt?: string;
   dataSource?: string;
@@ -120,6 +121,9 @@ export interface DCARecommendation {
 export interface PricePoint {
   date: string;
   price: number;
+  open?: number;
+  high?: number;
+  low?: number;
   volume?: number;
 }
 
