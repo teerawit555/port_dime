@@ -3,7 +3,10 @@ import { useState } from "react";
 import { useApp } from "@/lib/context";
 import {
   formatPercent,
+  formatCompactCurrency,
+  formatMultiple,
   formatOptionalNumber,
+  formatPeRatio,
   getStatusColor,
   getRecommendationColor,
   getRsiColor,
@@ -44,6 +47,9 @@ export default function WatchlistTable({ onSelectStock }: WatchlistTableProps) {
         holding,
         totalPortfolioValue,
         category: stock.category,
+        peRatio: stock.peRatio,
+        priceToSalesRatio: stock.priceToSalesRatio,
+        netIncomeTtm: stock.netIncomeTtm,
       }).buyScore;
     };
 
@@ -56,6 +62,10 @@ export default function WatchlistTable({ onSelectStock }: WatchlistTableProps) {
       return ((a.rsi14 ?? -1) - (b.rsi14 ?? -1)) * sortDir;
     if (sortKey === "pe")
       return ((a.peRatio ?? -1) - (b.peRatio ?? -1)) * sortDir;
+    if (sortKey === "ps")
+      return ((a.priceToSalesRatio ?? -1) - (b.priceToSalesRatio ?? -1)) * sortDir;
+    if (sortKey === "marketCap")
+      return ((a.marketCap ?? -1) - (b.marketCap ?? -1)) * sortDir;
     if (sortKey === "score")
       return (getScore(a.symbol) - getScore(b.symbol)) * sortDir;
     return 0;
@@ -82,6 +92,8 @@ export default function WatchlistTable({ onSelectStock }: WatchlistTableProps) {
                 { key: "change", label: "Change" },
                 { key: "rsi", label: "RSI" },
                 { key: "pe", label: "P/E" },
+                { key: "ps", label: "P/S" },
+                { key: "marketCap", label: "Mkt Cap" },
                 { key: "score", label: "Score" },
               ].map(({ key, label }) => (
                 <th
@@ -110,6 +122,9 @@ export default function WatchlistTable({ onSelectStock }: WatchlistTableProps) {
                 holding,
                 totalPortfolioValue,
                 category: stock.category,
+                peRatio: stock.peRatio,
+                priceToSalesRatio: stock.priceToSalesRatio,
+                netIncomeTtm: stock.netIncomeTtm,
               });
               const actionAmount = getActionAmountLabel({
                 buyScore,
@@ -146,7 +161,17 @@ export default function WatchlistTable({ onSelectStock }: WatchlistTableProps) {
                   {formatOptionalNumber(stock.rsi14, 1)}
                 </td>
                 <td className="px-4 py-3 text-slate-300">
-                  {formatOptionalNumber(stock.peRatio ?? stock.forwardPeRatio, 1)}
+                  {formatPeRatio(
+                    stock.peRatio ?? stock.forwardPeRatio,
+                    stock.netIncomeTtm,
+                    stock.category
+                  )}
+                </td>
+                <td className="px-4 py-3 text-slate-300">
+                  {formatMultiple(stock.priceToSalesRatio)}
+                </td>
+                <td className="px-4 py-3 text-slate-300">
+                  {formatCompactCurrency(stock.marketCap)}
                 </td>
                 <td className="px-4 py-3">
                   <span

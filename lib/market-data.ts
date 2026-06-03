@@ -1,6 +1,7 @@
 import type { MarketSnapshot, PricePoint, SupportResistance } from "@/types";
 
 const SOURCE = "Yahoo Finance";
+const FUNDAMENTALS_SOURCE = "Yahoo Finance fundamentals";
 const FINNHUB_SOURCE = "Finnhub";
 const STOOQ_SOURCE = "Stooq";
 const USER_AGENT =
@@ -18,24 +19,6 @@ const KNOWN_COMPANY_NAMES: Record<string, string> = {
   IREN: "IREN Limited",
 };
 
-type YahooQuote = {
-  symbol?: string;
-  shortName?: string;
-  longName?: string;
-  currency?: string;
-  regularMarketPrice?: number;
-  regularMarketPreviousClose?: number;
-  regularMarketChange?: number;
-  regularMarketChangePercent?: number;
-  regularMarketDayHigh?: number;
-  regularMarketDayLow?: number;
-  regularMarketVolume?: number;
-  marketCap?: number;
-  trailingPE?: number;
-  forwardPE?: number;
-  regularMarketTime?: number;
-};
-
 type YahooChartResult = {
   timestamp?: number[];
   meta?: {
@@ -48,6 +31,8 @@ type YahooChartResult = {
     regularMarketDayLow?: number;
     regularMarketVolume?: number;
     regularMarketTime?: number;
+    fiftyTwoWeekHigh?: number;
+    fiftyTwoWeekLow?: number;
     longName?: string;
     shortName?: string;
   };
@@ -59,34 +44,6 @@ type YahooChartResult = {
       close?: Array<number | null>;
       volume?: Array<number | null>;
     }>;
-  };
-};
-
-type YahooRawValue<T> = {
-  raw?: T;
-  fmt?: string;
-};
-
-type YahooQuoteSummary = {
-  price?: {
-    longName?: string;
-    shortName?: string;
-    currency?: string;
-    regularMarketPrice?: YahooRawValue<number>;
-    marketCap?: YahooRawValue<number>;
-  };
-  summaryDetail?: {
-    previousClose?: YahooRawValue<number>;
-    regularMarketPreviousClose?: YahooRawValue<number>;
-    dayHigh?: YahooRawValue<number>;
-    dayLow?: YahooRawValue<number>;
-    volume?: YahooRawValue<number>;
-    trailingPE?: YahooRawValue<number>;
-    forwardPE?: YahooRawValue<number>;
-  };
-  defaultKeyStatistics?: {
-    trailingPE?: YahooRawValue<number>;
-    forwardPE?: YahooRawValue<number>;
   };
 };
 
@@ -117,6 +74,24 @@ type PriceHistoryResult = {
   meta?: YahooChartMeta;
 };
 
+type YahooFundamentalPoint = {
+  asOfDate?: string;
+  reportedValue?: {
+    raw?: number;
+  };
+};
+
+type YahooFundamentalSeries = {
+  meta?: {
+    type?: string[];
+  };
+  [key: string]: unknown;
+};
+
+type YahooFundamentals = {
+  series: Map<string, YahooFundamentalPoint[]>;
+};
+
 type StooqQuote = {
   dayHigh?: number;
   dayLow?: number;
@@ -138,9 +113,42 @@ export function normalizeSymbols(symbols: string[]) {
   );
 }
 
+const FUNDAMENTAL_TYPES = [
+  "trailingMarketCap",
+  "trailingPeRatio",
+  "trailingPsRatio",
+  "trailingTotalRevenue",
+  "trailingNetIncomeContinuousOperations",
+  "trailingFreeCashFlow",
+  "trailingOperatingCashFlow",
+  "trailingGrossProfit",
+  "quarterlyTotalDebt",
+  "quarterlyStockholdersEquity",
+  "quarterlyTotalRevenue",
+  "quarterlyNetIncomeContinuousOperations",
+  "quarterlyDilutedEPS",
+] as const;
+
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url, {
     cache: "no-store",
+    signal: AbortSignal.timeout(12000),
+    headers: {
+      Accept: "application/json",
+      "User-Agent": USER_AGENT,
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Market data request failed (${res.status})`);
+  }
+
+  return res.json() as Promise<T>;
+}
+
+async function fetchCachedJson<T>(url: string, revalidateSeconds: number): Promise<T> {
+  const res = await fetch(url, {
+    next: { revalidate: revalidateSeconds },
     signal: AbortSignal.timeout(12000),
     headers: {
       Accept: "application/json",
@@ -172,27 +180,10 @@ async function fetchText(url: string): Promise<string> {
   return res.text();
 }
 
-async function fetchQuotes(symbols: string[]) {
-  if (symbols.length === 0) return new Map<string, YahooQuote>();
-
-  const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(
-    symbols.join(",")
-  )}`;
-  const json = await fetchJson<{
-    quoteResponse?: { result?: YahooQuote[]; error?: unknown };
-  }>(url);
-
-  const map = new Map<string, YahooQuote>();
-  for (const quote of json.quoteResponse?.result ?? []) {
-    if (quote.symbol) map.set(quote.symbol.toUpperCase(), quote);
-  }
-  return map;
-}
-
 async function fetchPriceHistory(symbol: string): Promise<PriceHistoryResult> {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
     symbol
-  )}?range=6mo&interval=1d`;
+  )}?range=1y&interval=1d`;
   const json = await fetchJson<{ chart?: { result?: YahooChartResult[] } }>(url);
   const result = json.chart?.result?.[0];
   const timestamps = result?.timestamp ?? [];
@@ -226,16 +217,29 @@ async function fetchPriceHistory(symbol: string): Promise<PriceHistoryResult> {
   return { points, meta: result?.meta };
 }
 
-async function fetchQuoteSummary(symbol: string): Promise<YahooQuoteSummary | null> {
-  const modules = "price,summaryDetail,defaultKeyStatistics";
-  const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(
+async function fetchYahooFundamentals(symbol: string): Promise<YahooFundamentals> {
+  const end = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
+  const start = end - 3 * 365 * 24 * 60 * 60;
+  const url = `https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(
     symbol
-  )}?modules=${modules}`;
-  const json = await fetchJson<{
-    quoteSummary?: { result?: YahooQuoteSummary[] };
-  }>(url);
+  )}?symbol=${encodeURIComponent(symbol)}&type=${FUNDAMENTAL_TYPES.join(
+    ","
+  )}&period1=${start}&period2=${end}`;
+  const json = await fetchCachedJson<{
+    timeseries?: { result?: YahooFundamentalSeries[] };
+  }>(url, 6 * 60 * 60);
+  const series = new Map<string, YahooFundamentalPoint[]>();
 
-  return json.quoteSummary?.result?.[0] ?? null;
+  for (const result of json.timeseries?.result ?? []) {
+    const type = result.meta?.type?.[0];
+    if (!type) continue;
+    const points = result[type];
+    if (Array.isArray(points)) {
+      series.set(type, points as YahooFundamentalPoint[]);
+    }
+  }
+
+  return { series };
 }
 
 async function fetchFinnhubData(symbol: string) {
@@ -288,6 +292,204 @@ async function fetchStooqQuote(symbol: string): Promise<StooqQuote | null> {
   };
 }
 
+function getLatestFundamentalPoint(
+  fundamentals: YahooFundamentals | null,
+  type: string
+) {
+  const points = fundamentals?.series.get(type) ?? [];
+  return points
+    .filter(
+      (point) =>
+        typeof point.asOfDate === "string" &&
+        asFiniteNumber(point.reportedValue?.raw) !== undefined
+    )
+    .sort((a, b) => (a.asOfDate ?? "").localeCompare(b.asOfDate ?? ""))
+    .at(-1);
+}
+
+function getFundamentalValue(
+  fundamentals: YahooFundamentals | null,
+  type: string
+) {
+  return asFiniteNumber(
+    getLatestFundamentalPoint(fundamentals, type)?.reportedValue?.raw
+  );
+}
+
+function calculateLatestQuarterYoYGrowth(
+  fundamentals: YahooFundamentals | null,
+  type: string
+) {
+  const points = (fundamentals?.series.get(type) ?? [])
+    .filter(
+      (point) =>
+        typeof point.asOfDate === "string" &&
+        asFiniteNumber(point.reportedValue?.raw) !== undefined
+    )
+    .sort((a, b) => (a.asOfDate ?? "").localeCompare(b.asOfDate ?? ""));
+  const latest = points.at(-1);
+  if (!latest?.asOfDate) return null;
+
+  const latestDate = new Date(`${latest.asOfDate}T00:00:00Z`);
+  const prior = points.find((point) => {
+    if (!point.asOfDate || point === latest) return false;
+    const pointDate = new Date(`${point.asOfDate}T00:00:00Z`);
+    const monthDifference =
+      (latestDate.getUTCFullYear() - pointDate.getUTCFullYear()) * 12 +
+      latestDate.getUTCMonth() -
+      pointDate.getUTCMonth();
+    return monthDifference === 12;
+  });
+  const latestValue = asFiniteNumber(latest.reportedValue?.raw);
+  const priorValue = asFiniteNumber(prior?.reportedValue?.raw);
+  if (latestValue === undefined || priorValue === undefined || priorValue === 0) {
+    return null;
+  }
+
+  return Number((((latestValue - priorValue) / Math.abs(priorValue)) * 100).toFixed(2));
+}
+
+function calculateSma(prices: PricePoint[], period: number) {
+  if (prices.length < period) return null;
+  const slice = prices.slice(-period);
+  const average =
+    slice.reduce((sum, point) => sum + point.price, 0) / slice.length;
+  return Number(average.toFixed(2));
+}
+
+function findHistoryPrice(prices: PricePoint[], date?: string) {
+  if (!date) return undefined;
+  return prices.find((point) => point.date === date)?.price;
+}
+
+function calculateFundamentalMetrics({
+  fundamentals,
+  currentPrice,
+  priceHistory,
+}: {
+  fundamentals: YahooFundamentals | null;
+  currentPrice: number;
+  priceHistory: PricePoint[];
+}) {
+  const rawMarketCap = getFundamentalValue(fundamentals, "trailingMarketCap");
+  const marketCapPoint = getLatestFundamentalPoint(
+    fundamentals,
+    "trailingMarketCap"
+  );
+  const marketCapReferencePrice = findHistoryPrice(
+    priceHistory,
+    marketCapPoint?.asOfDate
+  );
+  const marketCap =
+    rawMarketCap !== undefined &&
+    marketCapReferencePrice !== undefined &&
+    marketCapReferencePrice > 0
+      ? rawMarketCap * (currentPrice / marketCapReferencePrice)
+      : rawMarketCap;
+  const totalRevenueTtm =
+    getFundamentalValue(fundamentals, "trailingTotalRevenue") ?? null;
+  const netIncomeTtm =
+    getFundamentalValue(
+      fundamentals,
+      "trailingNetIncomeContinuousOperations"
+    ) ?? null;
+  const operatingCashFlowTtm =
+    getFundamentalValue(fundamentals, "trailingOperatingCashFlow") ?? null;
+  const freeCashFlowTtm =
+    getFundamentalValue(fundamentals, "trailingFreeCashFlow") ?? null;
+  const grossProfitTtm =
+    getFundamentalValue(fundamentals, "trailingGrossProfit") ?? null;
+  const totalDebt =
+    getFundamentalValue(fundamentals, "quarterlyTotalDebt") ?? null;
+  const stockholdersEquity =
+    getFundamentalValue(fundamentals, "quarterlyStockholdersEquity") ?? null;
+  const dilutedEpsPoints = fundamentals?.series.get("quarterlyDilutedEPS") ?? [];
+  const epsTtm =
+    dilutedEpsPoints.length >= 4
+      ? Number(
+          dilutedEpsPoints
+            .slice(-4)
+            .reduce(
+              (sum, point) =>
+                sum + (asFiniteNumber(point.reportedValue?.raw) ?? 0),
+              0
+            )
+            .toFixed(4)
+        )
+      : marketCap && currentPrice > 0 && netIncomeTtm !== null
+        ? Number((netIncomeTtm / (marketCap / currentPrice)).toFixed(4))
+        : null;
+  const fundamentalsAsOf = [
+    getLatestFundamentalPoint(fundamentals, "trailingTotalRevenue")?.asOfDate,
+    getLatestFundamentalPoint(fundamentals, "quarterlyStockholdersEquity")
+      ?.asOfDate,
+  ]
+    .filter((date): date is string => Boolean(date))
+    .sort()
+    .at(-1);
+
+  return {
+    marketCap,
+    peRatio:
+      marketCap !== undefined && netIncomeTtm !== null && netIncomeTtm > 0
+        ? Number((marketCap / netIncomeTtm).toFixed(2))
+        : null,
+    priceToSalesRatio:
+      marketCap !== undefined &&
+      totalRevenueTtm !== null &&
+      totalRevenueTtm > 0
+        ? Number((marketCap / totalRevenueTtm).toFixed(2))
+        : null,
+    priceToBookRatio:
+      marketCap !== undefined &&
+      stockholdersEquity !== null &&
+      stockholdersEquity > 0
+        ? Number((marketCap / stockholdersEquity).toFixed(2))
+        : null,
+    epsTtm,
+    totalRevenueTtm,
+    netIncomeTtm,
+    operatingCashFlowTtm,
+    freeCashFlowTtm,
+    totalDebt,
+    stockholdersEquity,
+    grossMarginPercent:
+      grossProfitTtm !== null && totalRevenueTtm !== null && totalRevenueTtm > 0
+        ? Number(((grossProfitTtm / totalRevenueTtm) * 100).toFixed(2))
+        : null,
+    netMarginPercent:
+      netIncomeTtm !== null && totalRevenueTtm !== null && totalRevenueTtm > 0
+        ? Number(((netIncomeTtm / totalRevenueTtm) * 100).toFixed(2))
+        : null,
+    freeCashFlowMarginPercent:
+      freeCashFlowTtm !== null &&
+      totalRevenueTtm !== null &&
+      totalRevenueTtm > 0
+        ? Number(((freeCashFlowTtm / totalRevenueTtm) * 100).toFixed(2))
+        : null,
+    freeCashFlowYieldPercent:
+      freeCashFlowTtm !== null && marketCap !== undefined && marketCap > 0
+        ? Number(((freeCashFlowTtm / marketCap) * 100).toFixed(2))
+        : null,
+    debtToEquityPercent:
+      totalDebt !== null &&
+      stockholdersEquity !== null &&
+      stockholdersEquity > 0
+        ? Number(((totalDebt / stockholdersEquity) * 100).toFixed(2))
+        : null,
+    revenueGrowthYoYPercent: calculateLatestQuarterYoYGrowth(
+      fundamentals,
+      "quarterlyTotalRevenue"
+    ),
+    earningsGrowthYoYPercent: calculateLatestQuarterYoYGrowth(
+      fundamentals,
+      "quarterlyNetIncomeContinuousOperations"
+    ),
+    fundamentalsAsOf,
+    fundamentalsSource: fundamentalsAsOf ? FUNDAMENTALS_SOURCE : undefined,
+  };
+}
+
 export function calculateRsi(
   prices: PricePoint[],
   period = 14
@@ -335,7 +537,7 @@ function uniqueSortedLevels(levels: number[], direction: "asc" | "desc") {
   for (const level of sorted) {
     const rounded = roundPriceLevel(level);
     const duplicate = unique.some(
-      (existing) => Math.abs(existing - rounded) / rounded < 0.006
+      (existing) => Math.abs(existing - rounded) / rounded < 0.012
     );
     if (!duplicate) unique.push(rounded);
     if (unique.length === 3) break;
@@ -344,51 +546,71 @@ function uniqueSortedLevels(levels: number[], direction: "asc" | "desc") {
   return unique;
 }
 
+function getSwingLevels(prices: PricePoint[], direction: "low" | "high") {
+  const slice = prices.slice(-126);
+  const levels: number[] = [];
+
+  for (let index = 2; index < slice.length - 2; index++) {
+    const values = slice
+      .slice(index - 2, index + 3)
+      .map((point) =>
+        direction === "low"
+          ? (point.low ?? point.price)
+          : (point.high ?? point.price)
+      );
+    const current = values[2];
+    const extreme =
+      direction === "low" ? Math.min(...values) : Math.max(...values);
+    if (current === extreme) levels.push(current);
+  }
+
+  return levels;
+}
+
 export function calculateSupportResistance(
   prices: PricePoint[],
   currentPrice: number
 ): SupportResistance {
-  const windows = [20, 50, 126];
+  const windows = [5, 10, 20, 50, 126, 252];
   const lows = windows.flatMap((size) => {
     const slice = prices.slice(-size);
-    return slice.length ? Math.min(...slice.map((point) => point.price)) : [];
+    return slice.length
+      ? Math.min(...slice.map((point) => point.low ?? point.price))
+      : [];
   });
   const highs = windows.flatMap((size) => {
     const slice = prices.slice(-size);
-    return slice.length ? Math.max(...slice.map((point) => point.price)) : [];
+    return slice.length
+      ? Math.max(...slice.map((point) => point.high ?? point.price))
+      : [];
   });
-  const latestCloses = prices
-    .slice(-30)
-    .map((point) => point.price)
-    .filter((price) => price < currentPrice);
-  const recentUpside = prices
-    .slice(-30)
-    .map((point) => point.price)
-    .filter((price) => price > currentPrice);
+  const movingAverages = [20, 50, 100, 200]
+    .map((period) => calculateSma(prices, period))
+    .filter((value): value is number => value !== null);
+  const swingLows = getSwingLevels(prices, "low");
+  const swingHighs = getSwingLevels(prices, "high");
 
   const support = uniqueSortedLevels(
-    [...lows, ...latestCloses, currentPrice * 0.97, currentPrice * 0.93].filter(
-      (level) => level < currentPrice * 0.999
+    [...swingLows, ...movingAverages, ...lows].filter(
+      (level) => level < currentPrice * 0.995
     ),
     "desc"
   );
   const resistance = uniqueSortedLevels(
-    [
-      ...recentUpside,
-      ...highs,
-      currentPrice * 1.03,
-      currentPrice * 1.08,
-      currentPrice * 1.15,
-    ].filter((level) => level > currentPrice * 1.001),
+    [...swingHighs, ...movingAverages, ...highs].filter(
+      (level) => level > currentPrice * 1.005
+    ),
     "asc"
   );
 
   while (support.length < 3) {
-    support.push(roundPriceLevel(currentPrice * (1 - 0.04 * (support.length + 1))));
+    support.push(
+      roundPriceLevel(currentPrice * (1 - 0.05 * (support.length + 1)))
+    );
   }
   while (resistance.length < 3) {
     resistance.push(
-      roundPriceLevel(currentPrice * (1 + 0.05 * (resistance.length + 1)))
+      roundPriceLevel(currentPrice * (1 + 0.06 * (resistance.length + 1)))
     );
   }
 
@@ -398,20 +620,16 @@ export function calculateSupportResistance(
   };
 }
 
-async function buildMarketSnapshot(
-  symbol: string,
-  quoteMap: Map<string, YahooQuote>
-) {
-  const [historyResult, summaryResult, finnhubResult, stooqResult] =
+async function buildMarketSnapshot(symbol: string) {
+  const [historyResult, fundamentalsResult, finnhubResult, stooqResult] =
     await Promise.allSettled([
       fetchPriceHistory(symbol),
-      fetchQuoteSummary(symbol),
+      fetchYahooFundamentals(symbol),
       fetchFinnhubData(symbol),
       fetchStooqQuote(symbol),
     ]);
-  const quote = quoteMap.get(symbol);
-  const summary =
-    summaryResult.status === "fulfilled" ? summaryResult.value : null;
+  const fundamentals =
+    fundamentalsResult.status === "fulfilled" ? fundamentalsResult.value : null;
   const finnhub =
     finnhubResult.status === "fulfilled" ? finnhubResult.value : null;
   const finnhubQuote = finnhub?.quote;
@@ -426,16 +644,11 @@ async function buildMarketSnapshot(
   const latestHistoryPoint = priceHistory.at(-1);
   const currentPrice =
     asFiniteNumber(finnhubQuote?.c) ??
-    asFiniteNumber(quote?.regularMarketPrice) ??
-    asFiniteNumber(summary?.price?.regularMarketPrice?.raw) ??
     asFiniteNumber(chartMeta?.regularMarketPrice) ??
     latestHistoryPrice ??
     stooqQuote?.currentPrice;
   const previousClose =
     asFiniteNumber(finnhubQuote?.pc) ??
-    asFiniteNumber(quote?.regularMarketPreviousClose) ??
-    asFiniteNumber(summary?.summaryDetail?.previousClose?.raw) ??
-    asFiniteNumber(summary?.summaryDetail?.regularMarketPreviousClose?.raw) ??
     asFiniteNumber(chartMeta?.previousClose) ??
     priceHistory.at(-2)?.price ??
     asFiniteNumber(chartMeta?.chartPreviousClose) ??
@@ -449,60 +662,67 @@ async function buildMarketSnapshot(
 
   const changeAmount =
     asFiniteNumber(finnhubQuote?.d) ??
-    asFiniteNumber(quote?.regularMarketChange) ??
     currentPrice - previousClose;
   const changePercent =
     asFiniteNumber(finnhubQuote?.dp) ??
-    asFiniteNumber(quote?.regularMarketChangePercent) ??
     (previousClose > 0 ? (changeAmount / previousClose) * 100 : 0);
   const dayHigh =
     asFiniteNumber(finnhubQuote?.h) ??
-    asFiniteNumber(quote?.regularMarketDayHigh) ??
-    asFiniteNumber(summary?.summaryDetail?.dayHigh?.raw) ??
     asFiniteNumber(chartMeta?.regularMarketDayHigh) ??
     latestHistoryPoint?.high ??
     stooqQuote?.dayHigh;
   const dayLow =
     asFiniteNumber(finnhubQuote?.l) ??
-    asFiniteNumber(quote?.regularMarketDayLow) ??
-    asFiniteNumber(summary?.summaryDetail?.dayLow?.raw) ??
     asFiniteNumber(chartMeta?.regularMarketDayLow) ??
     latestHistoryPoint?.low ??
     stooqQuote?.dayLow;
   const volume =
-    asFiniteNumber(quote?.regularMarketVolume) ??
-    asFiniteNumber(summary?.summaryDetail?.volume?.raw) ??
     asFiniteNumber(chartMeta?.regularMarketVolume) ??
     latestHistoryPoint?.volume ??
     stooqQuote?.volume;
+  const fundamentalMetrics = calculateFundamentalMetrics({
+    fundamentals,
+    currentPrice,
+    priceHistory,
+  });
+  const sma20 = calculateSma(priceHistory, 20);
+  const sma50 = calculateSma(priceHistory, 50);
+  const sma200 = calculateSma(priceHistory, 200);
+  const fiftyTwoWeekHigh =
+    asFiniteNumber(chartMeta?.fiftyTwoWeekHigh) ??
+    (priceHistory.length > 0
+      ? Math.max(...priceHistory.map((point) => point.high ?? point.price))
+      : null);
+  const fiftyTwoWeekLow =
+    asFiniteNumber(chartMeta?.fiftyTwoWeekLow) ??
+    (priceHistory.length > 0
+      ? Math.min(...priceHistory.map((point) => point.low ?? point.price))
+      : null);
   const sourceParts = [
     finnhub ? FINNHUB_SOURCE : null,
     SOURCE,
+    fundamentals && fundamentals.series.size > 0 ? FUNDAMENTALS_SOURCE : null,
     stooqQuote ? STOOQ_SOURCE : null,
   ].filter(Boolean);
 
   return {
     symbol,
     companyName:
-      quote?.longName ??
-      summary?.price?.longName ??
       chartMeta?.longName ??
       KNOWN_COMPANY_NAMES[symbol] ??
-      quote?.shortName ??
-      summary?.price?.shortName ??
       chartMeta?.shortName ??
       symbol,
     currentPrice,
     previousClose,
     changeAmount,
     changePercent,
-    currency: quote?.currency ?? summary?.price?.currency ?? chartMeta?.currency ?? "USD",
+    currency: chartMeta?.currency ?? "USD",
     dayHigh,
     dayLow,
     volume,
+    ...fundamentalMetrics,
     marketCap:
-      asFiniteNumber(quote?.marketCap) ??
-      asFiniteNumber(summary?.price?.marketCap?.raw) ??
+      fundamentalMetrics.marketCap ??
       (asFiniteNumber(finnhubMetrics?.marketCapitalization) === undefined
         ? undefined
         : asFiniteNumber(finnhubMetrics?.marketCapitalization)! * 1_000_000),
@@ -510,23 +730,24 @@ async function buildMarketSnapshot(
       asFiniteNumber(finnhubMetrics?.peBasicExclExtraTTM) ??
       asFiniteNumber(finnhubMetrics?.peNormalizedAnnual) ??
       asFiniteNumber(finnhubMetrics?.peTTM) ??
-      asFiniteNumber(quote?.trailingPE) ??
-      asFiniteNumber(summary?.summaryDetail?.trailingPE?.raw) ??
-      asFiniteNumber(summary?.defaultKeyStatistics?.trailingPE?.raw) ??
-      null,
+      fundamentalMetrics.peRatio,
     forwardPeRatio:
-      asFiniteNumber(finnhubMetrics?.forwardPE) ??
-      asFiniteNumber(quote?.forwardPE) ??
-      asFiniteNumber(summary?.summaryDetail?.forwardPE?.raw) ??
-      asFiniteNumber(summary?.defaultKeyStatistics?.forwardPE?.raw) ??
-      null,
+      asFiniteNumber(finnhubMetrics?.forwardPE) ?? null,
     rsi14: calculateRsi(priceHistory),
+    sma20,
+    sma50,
+    sma200,
+    fiftyTwoWeekHigh,
+    fiftyTwoWeekLow,
+    distanceFrom52WeekHighPercent:
+      fiftyTwoWeekHigh && fiftyTwoWeekHigh > 0
+        ? Number((((currentPrice - fiftyTwoWeekHigh) / fiftyTwoWeekHigh) * 100).toFixed(2))
+        : null,
     levels: calculateSupportResistance(priceHistory, currentPrice),
     marketTime:
-      finnhubQuote?.t || quote?.regularMarketTime || chartMeta?.regularMarketTime
+      finnhubQuote?.t || chartMeta?.regularMarketTime
         ? new Date(
             (finnhubQuote?.t ??
-              quote?.regularMarketTime ??
               chartMeta?.regularMarketTime ??
               0) * 1000
           ).toISOString()
@@ -539,18 +760,9 @@ async function buildMarketSnapshot(
 
 export async function getMarketSnapshotResults(symbols: string[]) {
   const normalizedSymbols = normalizeSymbols(symbols);
-  let quoteMap = new Map<string, YahooQuote>();
-  let quoteError: string | undefined;
-
-  try {
-    quoteMap = await fetchQuotes(normalizedSymbols);
-  } catch (error) {
-    quoteError =
-      error instanceof Error ? error.message : "Quote request failed";
-  }
 
   const settled = await Promise.allSettled(
-    normalizedSymbols.map((symbol) => buildMarketSnapshot(symbol, quoteMap))
+    normalizedSymbols.map((symbol) => buildMarketSnapshot(symbol))
   );
 
   return {
@@ -558,7 +770,6 @@ export async function getMarketSnapshotResults(symbols: string[]) {
       result.status === "fulfilled" ? result.value : []
     ),
     errors: [
-      ...(quoteError ? [{ symbol: "", message: quoteError }] : []),
       ...settled.flatMap((result) =>
         result.status === "rejected"
           ? [

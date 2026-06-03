@@ -3,7 +3,9 @@ import { PortfolioHolding } from "@/types";
 import {
   formatCurrency,
   formatPercent,
+  formatMultiple,
   formatOptionalNumber,
+  formatPeRatio,
   calcHoldingMetrics,
   getPnLColor,
   getRsiColor,
@@ -44,6 +46,7 @@ export default function HoldingsTable({
               <th className="text-right px-3 py-2.5">Price</th>
               <th className="text-right px-3 py-2.5">RSI</th>
               <th className="text-right px-3 py-2.5">P/E</th>
+              <th className="text-right px-3 py-2.5">P/S</th>
               <th className="text-right px-3 py-2.5">Value (THB)</th>
               <th className="text-right px-3 py-2.5">P&amp;L</th>
               <th className="text-right px-4 py-2.5">Alloc</th>
@@ -92,7 +95,14 @@ export default function HoldingsTable({
                     {formatOptionalNumber(h.rsi14, 1)}
                   </td>
                   <td className="px-3 py-3 text-right text-slate-400">
-                    {formatOptionalNumber(h.peRatio ?? h.forwardPeRatio, 1)}
+                    {formatPeRatio(
+                      h.peRatio ?? h.forwardPeRatio,
+                      h.netIncomeTtm,
+                      h.category
+                    )}
+                  </td>
+                  <td className="px-3 py-3 text-right text-slate-400">
+                    {formatMultiple(h.priceToSalesRatio)}
                   </td>
                   <td className="px-3 py-3 text-right text-slate-200">
                     {formatCurrency(currentValueThb, "THB")}

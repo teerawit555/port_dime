@@ -28,6 +28,9 @@ export default function DCAPlanner() {
         status: w.status,
         category: w.category,
         rsi14: w.rsi14,
+        peRatio: w.peRatio,
+        priceToSalesRatio: w.priceToSalesRatio,
+        netIncomeTtm: w.netIncomeTtm,
       })),
       totalPortfolioValue
     );

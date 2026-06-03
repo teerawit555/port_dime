@@ -26,7 +26,40 @@ export interface SupportResistance {
   resistance: [number, number, number];
 }
 
-export interface StockWatchlistItem {
+export interface FundamentalMetrics {
+  marketCap?: number;
+  peRatio?: number | null;
+  forwardPeRatio?: number | null;
+  priceToSalesRatio?: number | null;
+  priceToBookRatio?: number | null;
+  epsTtm?: number | null;
+  totalRevenueTtm?: number | null;
+  netIncomeTtm?: number | null;
+  operatingCashFlowTtm?: number | null;
+  freeCashFlowTtm?: number | null;
+  totalDebt?: number | null;
+  stockholdersEquity?: number | null;
+  grossMarginPercent?: number | null;
+  netMarginPercent?: number | null;
+  freeCashFlowMarginPercent?: number | null;
+  freeCashFlowYieldPercent?: number | null;
+  debtToEquityPercent?: number | null;
+  revenueGrowthYoYPercent?: number | null;
+  earningsGrowthYoYPercent?: number | null;
+  fundamentalsAsOf?: string;
+  fundamentalsSource?: string;
+}
+
+export interface TechnicalMetrics {
+  sma20?: number | null;
+  sma50?: number | null;
+  sma200?: number | null;
+  fiftyTwoWeekHigh?: number | null;
+  fiftyTwoWeekLow?: number | null;
+  distanceFrom52WeekHighPercent?: number | null;
+}
+
+export interface StockWatchlistItem extends FundamentalMetrics, TechnicalMetrics {
   symbol: string;
   companyName: string;
   currentPrice: number;
@@ -37,9 +70,6 @@ export interface StockWatchlistItem {
   dayHigh?: number;
   dayLow?: number;
   volume?: number;
-  marketCap?: number;
-  peRatio?: number | null;
-  forwardPeRatio?: number | null;
   rsi14?: number | null;
   marketTime?: string;
   quoteUpdatedAt?: string;
@@ -52,7 +82,7 @@ export interface StockWatchlistItem {
   notes?: string;
 }
 
-export interface PortfolioHolding {
+export interface PortfolioHolding extends FundamentalMetrics, TechnicalMetrics {
   symbol: string;
   companyName: string;
   shares: number;
@@ -60,8 +90,6 @@ export interface PortfolioHolding {
   currentPrice: number;
   previousClose?: number;
   changePercent?: number;
-  peRatio?: number | null;
-  forwardPeRatio?: number | null;
   rsi14?: number | null;
   quoteUpdatedAt?: string;
   dataSource?: string;
@@ -131,7 +159,7 @@ export interface PricePoint {
   volume?: number;
 }
 
-export interface MarketSnapshot {
+export interface MarketSnapshot extends FundamentalMetrics, TechnicalMetrics {
   symbol: string;
   companyName: string;
   currentPrice: number;
@@ -142,9 +170,6 @@ export interface MarketSnapshot {
   dayHigh?: number;
   dayLow?: number;
   volume?: number;
-  marketCap?: number;
-  peRatio?: number | null;
-  forwardPeRatio?: number | null;
   rsi14?: number | null;
   levels?: SupportResistance;
   marketTime?: string;

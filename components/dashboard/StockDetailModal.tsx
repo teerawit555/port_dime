@@ -17,7 +17,10 @@ import {
   formatCurrency,
   formatPercent,
   formatCompactNumber,
+  formatCompactCurrency,
+  formatMultiple,
   formatOptionalNumber,
+  formatPeRatio,
   calcHoldingMetrics,
   getPnLColor,
   getRsiColor,
@@ -56,6 +59,32 @@ const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
   );
 };
 
+function formatMetricPercent(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? formatPercent(value)
+    : "N/A";
+}
+
+function FundamentalMetricCard({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+}) {
+  return (
+    <div className="rounded-lg border border-[#1e2d45] bg-[#141d2e]/40 p-3">
+      <p className="text-[10px] text-slate-600 uppercase tracking-wider mb-1">
+        {label}
+      </p>
+      <p className="text-[13px] font-semibold text-slate-200">{value}</p>
+      {sub && <p className="text-[10px] text-slate-600 mt-0.5">{sub}</p>}
+    </div>
+  );
+}
+
 export default function StockDetailModal({
   symbol,
   onClose,
@@ -87,6 +116,9 @@ export default function StockDetailModal({
     holding: holding ?? null,
     totalPortfolioValue,
     category: stock.category,
+    peRatio: stock.peRatio,
+    priceToSalesRatio: stock.priceToSalesRatio,
+    netIncomeTtm: stock.netIncomeTtm,
   });
   const actionAmount = getActionAmountLabel({
     buyScore,
@@ -239,25 +271,27 @@ export default function StockDetailModal({
               P/E
             </p>
             <p className="text-[14px] font-semibold text-slate-200">
-              {formatOptionalNumber(stock.peRatio ?? stock.forwardPeRatio, 1)}
+              {formatPeRatio(
+                stock.peRatio ?? stock.forwardPeRatio,
+                stock.netIncomeTtm,
+                stock.category
+              )}
             </p>
           </div>
           <div className="rounded-lg border border-[#1e2d45] bg-[#141d2e]/40 p-3">
             <p className="text-[10px] text-slate-600 uppercase tracking-wider mb-1">
-              Volume
+              P/S
             </p>
             <p className="text-[14px] font-semibold text-slate-200">
-              {formatCompactNumber(stock.volume)}
+              {formatMultiple(stock.priceToSalesRatio)}
             </p>
           </div>
           <div className="rounded-lg border border-[#1e2d45] bg-[#141d2e]/40 p-3">
             <p className="text-[10px] text-slate-600 uppercase tracking-wider mb-1">
-              Day Range
+              Market Cap
             </p>
-            <p className="text-[12px] font-semibold text-slate-200">
-              {stock.dayLow && stock.dayHigh
-                ? `$${stock.dayLow.toFixed(2)} - $${stock.dayHigh.toFixed(2)}`
-                : "N/A"}
+            <p className="text-[14px] font-semibold text-slate-200">
+              {formatCompactCurrency(stock.marketCap)}
             </p>
           </div>
           <div className="rounded-lg border border-[#1e2d45] bg-[#141d2e]/40 p-3">
@@ -397,6 +431,121 @@ export default function StockDetailModal({
                 <span className="text-red-400">${r}</span>
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* Fundamentals */}
+        <div className="px-5 py-3 border-t border-[#1e2d45]">
+          <div className="flex items-center justify-between gap-3 mb-2.5">
+            <p className="text-[10px] text-slate-600 uppercase tracking-wider">
+              Fundamentals
+            </p>
+            <p className="text-[10px] text-slate-600">
+              {stock.fundamentalsAsOf
+                ? `งบล่าสุด ${stock.fundamentalsAsOf}`
+                : "รอข้อมูล fundamentals"}
+            </p>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <FundamentalMetricCard
+              label="Revenue TTM"
+              value={formatCompactCurrency(stock.totalRevenueTtm)}
+              sub={`YoY ${formatMetricPercent(stock.revenueGrowthYoYPercent)}`}
+            />
+            <FundamentalMetricCard
+              label="Net Income TTM"
+              value={formatCompactCurrency(stock.netIncomeTtm)}
+              sub={`Margin ${formatMetricPercent(stock.netMarginPercent)}`}
+            />
+            <FundamentalMetricCard
+              label="Free Cash Flow"
+              value={formatCompactCurrency(stock.freeCashFlowTtm)}
+              sub={`Yield ${formatMetricPercent(stock.freeCashFlowYieldPercent)}`}
+            />
+            <FundamentalMetricCard
+              label="Gross Margin"
+              value={formatMetricPercent(stock.grossMarginPercent)}
+              sub={`FCF margin ${formatMetricPercent(stock.freeCashFlowMarginPercent)}`}
+            />
+            <FundamentalMetricCard
+              label="EPS TTM"
+              value={
+                typeof stock.epsTtm === "number"
+                  ? `$${stock.epsTtm.toFixed(2)}`
+                  : "N/A"
+              }
+              sub={`Earnings YoY ${formatMetricPercent(stock.earningsGrowthYoYPercent)}`}
+            />
+            <FundamentalMetricCard
+              label="P/B"
+              value={formatMultiple(stock.priceToBookRatio)}
+              sub={`Debt/Equity ${formatMetricPercent(stock.debtToEquityPercent)}`}
+            />
+            <FundamentalMetricCard
+              label="Operating Cash Flow"
+              value={formatCompactCurrency(stock.operatingCashFlowTtm)}
+              sub={`Debt ${formatCompactCurrency(stock.totalDebt)}`}
+            />
+            <FundamentalMetricCard
+              label="Book Equity"
+              value={formatCompactCurrency(stock.stockholdersEquity)}
+              sub={stock.fundamentalsSource ?? "N/A"}
+            />
+          </div>
+        </div>
+
+        {/* Technical context */}
+        <div className="px-5 py-3 border-t border-[#1e2d45]">
+          <p className="text-[10px] text-slate-600 uppercase tracking-wider mb-2.5">
+            Technical Context
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <FundamentalMetricCard
+              label="SMA 20"
+              value={
+                typeof stock.sma20 === "number"
+                  ? `$${stock.sma20.toFixed(2)}`
+                  : "N/A"
+              }
+            />
+            <FundamentalMetricCard
+              label="SMA 50"
+              value={
+                typeof stock.sma50 === "number"
+                  ? `$${stock.sma50.toFixed(2)}`
+                  : "N/A"
+              }
+            />
+            <FundamentalMetricCard
+              label="SMA 200"
+              value={
+                typeof stock.sma200 === "number"
+                  ? `$${stock.sma200.toFixed(2)}`
+                  : "N/A"
+              }
+            />
+            <FundamentalMetricCard
+              label="52W Range"
+              value={
+                typeof stock.fiftyTwoWeekLow === "number" &&
+                typeof stock.fiftyTwoWeekHigh === "number"
+                  ? `$${stock.fiftyTwoWeekLow.toFixed(2)} - $${stock.fiftyTwoWeekHigh.toFixed(2)}`
+                  : "N/A"
+              }
+              sub={`จากจุดสูงสุด ${formatMetricPercent(stock.distanceFrom52WeekHighPercent)}`}
+            />
+            <FundamentalMetricCard
+              label="Volume"
+              value={formatCompactNumber(stock.volume)}
+            />
+            <FundamentalMetricCard
+              label="Day Range"
+              value={
+                stock.dayLow && stock.dayHigh
+                  ? `$${stock.dayLow.toFixed(2)} - $${stock.dayHigh.toFixed(2)}`
+                  : "N/A"
+              }
+            />
           </div>
         </div>
 

@@ -88,12 +88,18 @@ export function calculateBuyZoneScore({
   holding,
   totalPortfolioValue,
   category,
+  peRatio,
+  priceToSalesRatio,
+  netIncomeTtm,
 }: {
   status: StockStatus;
   rsi14?: number | null;
   holding: PortfolioHolding | null;
   totalPortfolioValue: number;
   category: StockCategory;
+  peRatio?: number | null;
+  priceToSalesRatio?: number | null;
+  netIncomeTtm?: number | null;
 }) {
   const currentAllocation = getCurrentAllocation(holding, totalPortfolioValue);
   let score = 0;
@@ -116,9 +122,23 @@ export function calculateBuyZoneScore({
   else if (currentAllocation <= allocationCap) score += 15;
   else score += 5;
 
-  if (category === "ETF" || category === "Blue Chip") score += 15;
-  else if (category === "Tech") score += 12;
-  else score += 10;
+  if (category === "ETF") {
+    score += 15;
+  } else if (typeof peRatio === "number" && Number.isFinite(peRatio)) {
+    if (peRatio <= 25) score += 15;
+    else if (peRatio <= 40) score += 10;
+    else if (peRatio <= 60) score += 5;
+  } else if (
+    typeof netIncomeTtm === "number" &&
+    netIncomeTtm <= 0 &&
+    typeof priceToSalesRatio === "number" &&
+    Number.isFinite(priceToSalesRatio)
+  ) {
+    if (priceToSalesRatio <= 5) score += 8;
+    else if (priceToSalesRatio <= 10) score += 4;
+  } else {
+    score += 5;
+  }
 
   if (status !== "ใกล้แนวต้าน" && status !== "Breakout") score += 10;
 
@@ -172,6 +192,9 @@ export function calculateDCAAllocations(
     status: StockStatus;
     category: StockCategory;
     rsi14?: number | null;
+    peRatio?: number | null;
+    priceToSalesRatio?: number | null;
+    netIncomeTtm?: number | null;
   }>,
   totalPortfolioValue: number
 ): DCARecommendation[] {
@@ -193,6 +216,9 @@ export function calculateDCAAllocations(
       holding,
       totalPortfolioValue,
       category: stock.category,
+      peRatio: stock.peRatio,
+      priceToSalesRatio: stock.priceToSalesRatio,
+      netIncomeTtm: stock.netIncomeTtm,
     });
     const actionAmountLabel = getActionAmountLabel({
       buyScore,
@@ -346,6 +372,38 @@ export function formatCompactNumber(value: number | null | undefined): string {
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(value);
+}
+
+export function formatCompactCurrency(
+  value: number | null | undefined,
+  currency: "USD" | "THB" = "USD"
+): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "N/A";
+  return new Intl.NumberFormat(currency === "THB" ? "th-TH" : "en-US", {
+    style: "currency",
+    currency,
+    notation: "compact",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+export function formatPeRatio(
+  value: number | null | undefined,
+  netIncomeTtm?: number | null,
+  category?: StockCategory
+): string {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return `${value.toFixed(1)}x`;
+  }
+  if (category === "ETF") return "ETF";
+  if (typeof netIncomeTtm === "number" && netIncomeTtm <= 0) return "Loss";
+  return "N/A";
+}
+
+export function formatMultiple(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${value.toFixed(1)}x`
+    : "N/A";
 }
 
 // ─── localStorage Helpers ─────────────────────────────────────────────────────
