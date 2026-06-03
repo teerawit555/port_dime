@@ -138,9 +138,6 @@ export default function WatchlistTable({ onSelectStock }: WatchlistTableProps) {
               <th className="whitespace-nowrap px-4 py-3 text-left font-medium">
                 Signal
               </th>
-              <th className="whitespace-nowrap px-4 py-3 text-left font-medium">
-                Action
-              </th>
             </tr>
           </thead>
           <tbody>
@@ -305,7 +302,7 @@ export default function WatchlistTable({ onSelectStock }: WatchlistTableProps) {
                       </div>
                     </div>
                   </td>
-                  <td className="min-w-[155px] px-4 py-4">
+                  <td className="min-w-[190px] px-4 py-4">
                     <div className="flex flex-col items-start gap-1.5">
                       <Badge
                         className={clsx(
@@ -323,15 +320,10 @@ export default function WatchlistTable({ onSelectStock }: WatchlistTableProps) {
                       >
                         {stock.recommendation}
                       </span>
+                      <span className="whitespace-nowrap font-numeric text-[10px] text-slate-500">
+                        Action {actionAmount}
+                      </span>
                     </div>
-                  </td>
-                  <td className="min-w-[120px] px-4 py-4">
-                    <p className="whitespace-nowrap font-numeric text-[11px] font-medium text-slate-300">
-                      {actionAmount}
-                    </p>
-                    <p className="mt-1 whitespace-nowrap text-[9px] uppercase tracking-wider text-slate-600">
-                      Suggested range
-                    </p>
                   </td>
                 </tr>
               );
