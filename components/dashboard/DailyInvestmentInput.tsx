@@ -5,7 +5,7 @@ import { useApp } from "@/lib/context";
 import { DEFAULT_USD_THB_RATE } from "@/lib/utils";
 
 export default function DailyInvestmentInput() {
-  const { executeTrade, watchlist } = useApp();
+  const { executeTrade, portfolio, watchlist } = useApp();
   const [open, setOpen] = useState(false);
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [symbol, setSymbol] = useState("GOOGL");
@@ -15,9 +15,36 @@ export default function DailyInvestmentInput() {
   const [notes, setNotes] = useState("");
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
-  const activeSymbol = watchlist.some((stock) => stock.symbol === symbol)
+  const heldStocks = portfolio.holdings
+    .filter((holding) => holding.shares > 0)
+    .map(
+      (holding) =>
+        watchlist.find((stock) => stock.symbol === holding.symbol) ?? {
+          symbol: holding.symbol,
+          companyName: holding.companyName,
+          currentPrice: holding.currentPrice,
+          previousClose: holding.currentPrice,
+          changePercent: 0,
+          levels: {
+            support: [
+              holding.currentPrice,
+              holding.currentPrice,
+              holding.currentPrice,
+            ] as [number, number, number],
+            resistance: [
+              holding.currentPrice,
+              holding.currentPrice,
+              holding.currentPrice,
+            ] as [number, number, number],
+          },
+          status: "รอดู" as const,
+          recommendation: "รอซื้อ" as const,
+          category: holding.category,
+        }
+    );
+  const activeSymbol = heldStocks.some((stock) => stock.symbol === symbol)
     ? symbol
-    : watchlist[0]?.symbol ?? "GOOGL";
+    : heldStocks[0]?.symbol ?? "";
 
   function resetForm() {
     setAmount("");
@@ -27,7 +54,7 @@ export default function DailyInvestmentInput() {
   }
 
   function handleSubmit() {
-    const selectedStock = watchlist.find(
+    const selectedStock = heldStocks.find(
       (stock) => stock.symbol === activeSymbol
     );
     const amountThb = parseFloat(amount);
@@ -119,7 +146,7 @@ export default function DailyInvestmentInput() {
             onChange={(event) => setSymbol(event.target.value)}
             className="w-full bg-[#141d2e] border border-[#1e2d45] rounded-lg px-3 py-2 text-[12px] text-slate-200 outline-none focus:border-blue-500/50"
           >
-            {watchlist.map((stock) => (
+            {heldStocks.map((stock) => (
               <option key={stock.symbol} value={stock.symbol}>
                 {stock.symbol}
               </option>

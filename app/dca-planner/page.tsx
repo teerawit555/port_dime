@@ -1,4 +1,5 @@
 "use client";
+import { Target } from "lucide-react";
 import AppShell from "@/components/layout/AppShell";
 import DCAPlanner from "@/components/dca/DCAPlanner";
 import DailyInvestmentInput from "@/components/dashboard/DailyInvestmentInput";
@@ -6,13 +7,17 @@ import DailyInvestmentInput from "@/components/dashboard/DailyInvestmentInput";
 export default function DCAPage() {
   return (
     <AppShell>
-      <div className="px-4 lg:px-6 py-5 space-y-5 max-w-4xl mx-auto">
+      <div className="mx-auto max-w-[1400px] space-y-6 px-4 py-5 lg:px-7 lg:py-7">
         <div>
-          <h1 className="text-[18px] font-semibold text-slate-100">
+          <div className="mb-2 flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.18em] text-blue-400/70">
+            <Target className="h-3.5 w-3.5" />
+            Portfolio Focus
+          </div>
+          <h1 className="text-[22px] font-semibold tracking-tight text-slate-100">
             DCA Planner
           </h1>
-          <p className="text-[12px] text-slate-500 mt-0.5">
-            วางแผนจัดสรรงบลงทุนรายวันตามแนวรับแนวต้านและสัดส่วนพอร์ต
+          <p className="mt-1 text-[12px] text-slate-500">
+            วางแผนเติมเฉพาะหุ้นที่ถืออยู่ โดยรอซื้อเมื่อราคาเข้าโซนที่เหมาะสม
           </p>
         </div>
         <DCAPlanner />

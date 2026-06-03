@@ -141,11 +141,18 @@ export interface DailyBudgetInput {
 export interface DCARecommendation {
   symbol: string;
   status: StockStatus;
+  strategicRole: string;
+  condition: string;
+  plannedBudget: number;
   recommendedBudget: number;
   actionAmountLabel: string;
   buyScore: number;
   buyScoreLabel: BuyZoneLabel;
   targetPrice: number;
+  buyZones: number[];
+  allocationPercent: number;
+  targetAllocationPercent: number;
+  isReady: boolean;
   reason: string;
   risk: RiskLevel;
 }

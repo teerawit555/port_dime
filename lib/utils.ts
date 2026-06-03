@@ -182,6 +182,87 @@ export function getActionAmountLabel({
 
 // ─── DCA Planner ─────────────────────────────────────────────────────────────
 
+function getDCAProfile(symbol: string, category: StockCategory) {
+  const profiles: Record<
+    string,
+    { strategicRole: string; weight: number; allocationCap: number }
+  > = {
+    ANET: {
+      strategicRole: "Main Growth Core",
+      weight: 0.3,
+      allocationCap: 0.15,
+    },
+    NVDA: {
+      strategicRole: "Core AI",
+      weight: 0.225,
+      allocationCap: 0.2,
+    },
+    PLTR: {
+      strategicRole: "Satellite AI",
+      weight: 0.125,
+      allocationCap: 0.08,
+    },
+    RKLB: {
+      strategicRole: "High Risk Upside",
+      weight: 0.1,
+      allocationCap: 0.06,
+    },
+    VOO: {
+      strategicRole: "ETF / กันชน",
+      weight: 0.1,
+      allocationCap: 0.35,
+    },
+    QQQM: {
+      strategicRole: "ETF / กันชน",
+      weight: 0.1,
+      allocationCap: 0.35,
+    },
+    GOOGL: {
+      strategicRole: "Existing Core",
+      weight: 0.05,
+      allocationCap: 0.25,
+    },
+    AAPL: {
+      strategicRole: "Quality Core",
+      weight: 0.1,
+      allocationCap: 0.15,
+    },
+  };
+
+  if (profiles[symbol]) return profiles[symbol];
+  if (category === "ETF") {
+    return {
+      strategicRole: "ETF / กันชน",
+      weight: 0.1,
+      allocationCap: 0.35,
+    };
+  }
+  if (category === "Growth") {
+    return {
+      strategicRole: "High Risk Upside",
+      weight: 0.08,
+      allocationCap: 0.06,
+    };
+  }
+  if (category === "Blue Chip") {
+    return {
+      strategicRole: "Quality Core",
+      weight: 0.1,
+      allocationCap: 0.15,
+    };
+  }
+  return {
+    strategicRole: "Core Growth",
+    weight: 0.1,
+    allocationCap: 0.15,
+  };
+}
+
+function roundDcaBudget(value: number) {
+  if (value <= 0) return 0;
+  return Math.round(value / 50) * 50;
+}
+
 export function calculateDCAAllocations(
   budget: number,
   holdings: PortfolioHolding[],
@@ -199,9 +280,17 @@ export function calculateDCAAllocations(
   totalPortfolioValue: number
 ): DCARecommendation[] {
   const recommendations: DCARecommendation[] = [];
+  const activeHoldings = holdings.filter((holding) => holding.shares > 0);
+  const activeHoldingSymbols = new Set(
+    activeHoldings.map((holding) => holding.symbol)
+  );
+  const heldStocks = watchlist.filter((stock) =>
+    activeHoldingSymbols.has(stock.symbol)
+  );
 
-  for (const stock of watchlist) {
-    const holding = holdings.find((h) => h.symbol === stock.symbol) || null;
+  const drafts = heldStocks.map((stock) => {
+    const holding =
+      activeHoldings.find((item) => item.symbol === stock.symbol) ?? null;
     const status = getStockStatus(stock.currentPrice, stock.levels);
     const recommendation = getRecommendation(
       status,
@@ -210,6 +299,16 @@ export function calculateDCAAllocations(
       stock.category
     );
     const risk = getRiskLevel(stock.category, status);
+    const profile = getDCAProfile(stock.symbol, stock.category);
+    const allocationPercent =
+      holding && totalPortfolioValue > 0
+        ? ((holding.shares * holding.currentPrice) / totalPortfolioValue) * 100
+        : 0;
+    const isOverAllocated =
+      allocationPercent > profile.allocationCap * 100 + 0.01;
+    const isReady =
+      !isOverAllocated &&
+      (status === "ใกล้แนวรับ" || status === "เด้งจากแนวรับ");
     const { buyScore, buyScoreLabel } = calculateBuyZoneScore({
       status,
       rsi14: stock.rsi14,
@@ -225,77 +324,70 @@ export function calculateDCAAllocations(
       category: stock.category,
       recommendation,
     });
+    const buyZones = [...stock.levels.support];
+    const zoneText = buyZones.map((price) => `$${price}`).join(" / ");
 
-    let weight = 0;
-    let reason = "";
-    let targetPrice = stock.currentPrice;
-
-    if (status === "หลุดแนวรับ") {
-      weight = 0;
-      reason = "หลุดแนวรับ รอดูก่อน";
-      targetPrice = stock.levels.support[0];
-    } else if (status === "Breakout" || status === "ใกล้แนวต้าน") {
-      weight = 0;
-      reason = "ใกล้แนวต้าน / Breakout ไม่ควรไล่ราคา";
-      targetPrice = stock.levels.support[0];
-    } else if (status === "ใกล้แนวรับ") {
-      weight = stock.category === "Growth" ? 0.12 : 0.22;
-      reason = "ใกล้แนวรับ เหมาะซื้อไม้เล็ก";
-      targetPrice = stock.levels.support[0];
-    } else if (status === "เด้งจากแนวรับ") {
-      weight = stock.category === "Growth" ? 0.1 : 0.18;
-      reason = "เด้งจากแนวรับ momentum ดี";
-      targetPrice = stock.currentPrice;
-    } else if (status === "รอดู") {
-      if (stock.category === "ETF") {
-        weight = 0.15;
-        reason = "DCA ETF สม่ำเสมอ";
-        targetPrice = stock.levels.support[0];
-      } else if (stock.category === "Blue Chip") {
-        weight = 0.12;
-        reason = "DCA Blue Chip สม่ำเสมอ";
-        targetPrice = stock.levels.support[0];
-      } else {
-        weight = 0.05;
-        reason = "รออยู่กลางกรอบ ยังไม่ถึงแนวรับ";
-        targetPrice = stock.levels.support[0];
-      }
+    let reason = "ราคายังไม่ถึงโซนซื้อ เก็บงบไว้เป็นเงินสด";
+    if (isOverAllocated) {
+      reason = `สัดส่วนพอร์ต ${allocationPercent.toFixed(
+        1
+      )}% สูงกว่าเป้าหมาย ${Math.round(profile.allocationCap * 100)}% พักการเติม`;
+    } else if (status === "ใกล้แนวต้าน" || status === "Breakout") {
+      reason = "ราคาใกล้แนวต้าน ไม่ไล่ราคา";
+    } else if (status === "หลุดแนวรับ") {
+      reason = "หลุดแนวรับแรก รอให้ราคาสร้างฐานก่อน";
+    } else if (isReady) {
+      reason =
+        status === "เด้งจากแนวรับ"
+          ? "ราคาเด้งจากโซนรับ ซื้อได้ตามงบที่วางไว้"
+          : "ราคาเข้าใกล้โซนรับ ซื้อได้ตามงบที่วางไว้";
     }
 
-    // Reduce weight if over-allocated
-    if (holding && totalPortfolioValue > 0) {
-      const currentAlloc =
-        (holding.shares * holding.currentPrice) / totalPortfolioValue;
-      if (stock.category === "ETF" && currentAlloc > 0.35) weight *= 0.3;
-      if (stock.category === "Growth" && currentAlloc > 0.08) weight *= 0.4;
-    }
+    const condition =
+      stock.category === "ETF"
+        ? `ซื้อเฉพาะตอนตลาดย่อใกล้ ${zoneText}`
+        : stock.symbol === "RKLB" || stock.category === "Growth"
+          ? `ซื้อไม้เล็กเมื่อใกล้ ${zoneText}`
+          : `ซื้อเมื่อใกล้ ${zoneText}`;
 
-    const recommendedBudget = Math.round(budget * weight);
-
-    recommendations.push({
+    return {
       symbol: stock.symbol,
       status,
-      recommendedBudget,
+      strategicRole: profile.strategicRole,
+      condition,
+      weight: isOverAllocated ? 0 : profile.weight,
       actionAmountLabel,
       buyScore,
       buyScoreLabel,
-      targetPrice,
+      targetPrice: stock.levels.support[0],
+      buyZones,
+      allocationPercent,
+      targetAllocationPercent: profile.allocationCap * 100,
+      isReady,
       reason,
       risk,
-    });
-  }
+    };
+  });
 
-  // Normalize so total doesn't exceed budget
-  const total = recommendations.reduce((s, r) => s + r.recommendedBudget, 0);
-  if (total > budget && total > 0) {
-    const scale = budget / total;
-    recommendations.forEach((r) => {
-      r.recommendedBudget = Math.round(r.recommendedBudget * scale);
+  const maxInvestableWeight = 0.85;
+  const totalWeight = drafts.reduce((sum, draft) => sum + draft.weight, 0);
+  const scale =
+    totalWeight > maxInvestableWeight ? maxInvestableWeight / totalWeight : 1;
+
+  for (const draft of drafts) {
+    const plannedBudget = roundDcaBudget(budget * draft.weight * scale);
+    recommendations.push({
+      ...draft,
+      plannedBudget,
+      recommendedBudget: draft.isReady ? plannedBudget : 0,
     });
   }
 
   return recommendations.sort(
-    (a, b) => b.recommendedBudget - a.recommendedBudget
+    (a, b) =>
+      b.recommendedBudget - a.recommendedBudget ||
+      b.plannedBudget - a.plannedBudget ||
+      b.buyScore - a.buyScore
   );
 }
 
