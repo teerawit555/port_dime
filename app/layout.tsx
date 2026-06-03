@@ -1,6 +1,26 @@
 import type { Metadata } from "next";
+import { IBM_Plex_Mono, Inter, Noto_Sans_Thai } from "next/font/google";
 import "./globals.css";
 import { AppProvider } from "@/lib/context";
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
+});
+
+const notoSansThai = Noto_Sans_Thai({
+  subsets: ["thai"],
+  variable: "--font-thai",
+  display: "swap",
+});
+
+const ibmPlexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-mono",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "StockDesk — Portfolio Tracker",
@@ -13,15 +33,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="th" className="dark">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Inter:wght@400;500;600&display=swap"
-          rel="stylesheet"
-        />
-      </head>
+    <html
+      lang="th"
+      className={`dark ${inter.variable} ${notoSansThai.variable} ${ibmPlexMono.variable}`}
+    >
       <body>
         <AppProvider>{children}</AppProvider>
       </body>

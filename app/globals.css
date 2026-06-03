@@ -27,8 +27,13 @@ body {
   padding: 0;
   background: #080c14;
   color: #e2e8f0;
-  font-family: "IBM Plex Mono", "SF Mono", "Courier New", monospace;
+  font-family: var(--font-inter), var(--font-thai), "Leelawadee UI", Tahoma, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+}
+
+.font-numeric {
+  font-family: var(--font-mono), "SF Mono", "Courier New", monospace;
+  font-variant-numeric: tabular-nums;
 }
 
 ::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -49,7 +54,8 @@ body {
 .sidebar-link:hover { background: rgba(59,130,246,0.06); border-left-color: rgba(59,130,246,0.4); color: #e2e8f0; }
 .sidebar-link.active { background: rgba(59,130,246,0.1); border-left-color: #3b82f6; color: #60a5fa; }
 
-.table-row-hover:hover { background: rgba(255,255,255,0.025); }
+.table-row-hover { transition: background-color 0.15s ease; }
+.table-row-hover:hover { background: rgba(59,130,246,0.045); }
 
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(10px); }
