@@ -53,6 +53,20 @@ function isLegacySeedPortfolio(portfolio: Portfolio) {
   );
 }
 
+function isStaleDimeSeedPortfolio(portfolio: Portfolio) {
+  const googl = portfolio.holdings.find((holding) => holding.symbol === "GOOGL");
+  const voo = portfolio.holdings.find((holding) => holding.symbol === "VOO");
+  return Boolean(
+    portfolio.holdings.length === 5 &&
+      googl &&
+      Math.abs(googl.shares - 0.546112) < 0.000001 &&
+      Math.abs(googl.avgCost - 300.93) < 0.001 &&
+      voo &&
+      Math.abs(voo.shares - 0.267518) < 0.000001 &&
+      !portfolio.holdings.some((holding) => holding.symbol === "PLTR")
+  );
+}
+
 function isLegacySeedWatchlist(watchlist: StockWatchlistItem[]) {
   const googl = watchlist.find((stock) => stock.symbol === "GOOGL");
   return Boolean(
@@ -73,13 +87,33 @@ function mergeDefaultWatchlist(watchlist: StockWatchlistItem[]) {
 }
 
 function migrateLegacySeedPortfolio(portfolio: Portfolio) {
-  return isLegacySeedPortfolio(portfolio)
-    ? {
-        ...mockPortfolio,
-        cashBalance: portfolio.cashBalance,
-        totalInvested: portfolio.totalInvested,
-      }
-    : portfolio;
+  if (!isLegacySeedPortfolio(portfolio) && !isStaleDimeSeedPortfolio(portfolio)) {
+    return portfolio;
+  }
+
+  const hasCustomCashBalance =
+    Math.abs(portfolio.cashBalance - 2000) > 0.001 &&
+    Math.abs(portfolio.cashBalance) > 0.001;
+
+  return {
+    ...mockPortfolio,
+    cashBalance: hasCustomCashBalance
+      ? portfolio.cashBalance
+      : mockPortfolio.cashBalance,
+  };
+}
+
+function isStaleSeedInvestmentLog(logs: InvestmentLogEntry[]) {
+  return Boolean(
+    logs.length === 5 &&
+      logs.some(
+        (entry) =>
+          entry.id === "1" &&
+          entry.date === "2025-06-01" &&
+          entry.symbol === "GOOGL"
+      ) &&
+      !logs.some((entry) => entry.id.startsWith("dime-"))
+  );
 }
 
 type RepairedHoldingDraft = {
@@ -126,6 +160,8 @@ function repairMissingHoldingsFromExecutedLogs(
     if (!shares || priceUsd <= 0) continue;
 
     const action = entry.action ?? "buy";
+    if (action !== "buy" && action !== "sell") continue;
+
     const draft =
       drafts.get(entry.symbol) ?? {
         shares: 0,
@@ -203,21 +239,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const savedPortfolio = loadFromStorage("PORTFOLIO", mockPortfolio);
     const savedWatchlist = loadFromStorage("WATCHLIST", mockWatchlist);
     const savedLog = loadFromStorage("LOG", mockInvestmentLog);
+    const logToUse = isStaleSeedInvestmentLog(savedLog)
+      ? mockInvestmentLog
+      : savedLog;
     const watchlistToUse = isLegacySeedWatchlist(savedWatchlist)
       ? mockWatchlist
       : mergeDefaultWatchlist(savedWatchlist);
     const migratedPortfolio = migrateLegacySeedPortfolio(savedPortfolio);
     const portfolioToUse = repairMissingHoldingsFromExecutedLogs(
       migratedPortfolio,
-      savedLog,
+      logToUse,
       watchlistToUse
     );
 
     setPortfolio(portfolioToUse);
     setWatchlist(watchlistToUse);
-    setInvestmentLog(savedLog);
+    setInvestmentLog(logToUse);
     if (portfolioToUse !== savedPortfolio) saveToStorage("PORTFOLIO", portfolioToUse);
     if (watchlistToUse !== savedWatchlist) saveToStorage("WATCHLIST", watchlistToUse);
+    if (logToUse !== savedLog) saveToStorage("LOG", logToUse);
     setHydrated(true);
   }, []);
 
@@ -539,6 +579,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     const action = entry.action ?? "buy";
+    if (action !== "buy" && action !== "sell") {
+      return { ok: false, message: "This log entry is not a buy/sell trade" };
+    }
+
     const amountThb = entry.amount;
     const priceUsd = entry.actualPrice ?? entry.targetPrice;
     const exchangeRate = entry.exchangeRate ?? DEFAULT_USD_THB_RATE;

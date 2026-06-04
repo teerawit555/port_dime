@@ -18,6 +18,12 @@ export type BuyZoneLabel = "น่าเก็บ" | "ไม้เล็ก" | "
 
 export type InvestmentStatus = "planned" | "executed" | "skipped";
 export type TradeAction = "buy" | "sell";
+export type InvestmentLogAction =
+  | TradeAction
+  | "dividend"
+  | "adjustment"
+  | "tax"
+  | "fee";
 
 export type StockCategory = "ETF" | "Tech" | "Growth" | "Blue Chip";
 
@@ -110,7 +116,7 @@ export interface InvestmentLogEntry {
   amount: number;
   targetPrice: number;
   actualPrice?: number;
-  action?: TradeAction;
+  action?: InvestmentLogAction;
   shares?: number;
   exchangeRate?: number;
   realizedPnL?: number;

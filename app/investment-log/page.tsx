@@ -9,12 +9,26 @@ export default function InvestmentLogPage() {
   const { investmentLog } = useApp();
 
   const planned = investmentLog.filter((e) => e.status === "planned").length;
+  const skipped = investmentLog.filter((e) => e.status === "skipped").length;
   const executed = investmentLog.filter((e) => e.status === "executed").length;
   const buyTotal = investmentLog
     .filter((e) => e.status === "executed" && (e.action ?? "buy") === "buy")
     .reduce((s, e) => s + e.amount, 0);
   const sellTotal = investmentLog
     .filter((e) => e.status === "executed" && e.action === "sell")
+    .reduce((s, e) => s + e.amount, 0);
+  const dividendTotal = investmentLog
+    .filter(
+      (e) =>
+        e.status === "executed" &&
+        (e.action === "dividend" || e.action === "adjustment")
+    )
+    .reduce((s, e) => s + e.amount, 0);
+  const feeTaxTotal = investmentLog
+    .filter(
+      (e) =>
+        e.status === "executed" && (e.action === "fee" || e.action === "tax")
+    )
     .reduce((s, e) => s + e.amount, 0);
   const realizedPnL = investmentLog.reduce(
     (s, e) => s + (e.realizedPnL ?? 0),
@@ -34,12 +48,14 @@ export default function InvestmentLogPage() {
         </div>
 
         {/* Summary */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {[
-            { label: "ทั้งหมด", value: investmentLog.length, color: "text-slate-200" },
-            { label: "Planned", value: planned, color: "text-amber-400" },
+            { label: "All", value: investmentLog.length, color: "text-slate-200" },
+            { label: planned > 0 ? "Planned" : "Skipped", value: planned > 0 ? planned : skipped, color: "text-amber-400" },
             { label: "Buy", value: formatCurrency(buyTotal, "THB"), color: "text-emerald-400" },
             { label: "Sell", value: formatCurrency(sellTotal, "THB"), color: "text-red-400" },
+            { label: "Dividends", value: formatCurrency(dividendTotal, "THB"), color: "text-blue-400" },
+            { label: "Fees/Tax", value: formatCurrency(feeTaxTotal, "THB"), color: "text-orange-400" },
           ].map((s) => (
             <div
               key={s.label}
@@ -79,3 +95,4 @@ export default function InvestmentLogPage() {
     </AppShell>
   );
 }
+

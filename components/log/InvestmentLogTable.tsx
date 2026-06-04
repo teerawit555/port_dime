@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useApp } from "@/lib/context";
-import { InvestmentStatus } from "@/types";
+import { InvestmentLogAction, InvestmentStatus } from "@/types";
 import { clsx } from "clsx";
 import { Trash2, Check, X, Clock, type LucideIcon } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
@@ -27,6 +27,45 @@ const STATUS_CONFIG: Record<
   },
 };
 
+const ACTION_CONFIG: Record<
+  InvestmentLogAction,
+  { label: string; color: string }
+> = {
+  buy: {
+    label: "BUY",
+    color: "text-emerald-400 bg-emerald-400/10 border-emerald-400/30",
+  },
+  sell: {
+    label: "SELL",
+    color: "text-red-400 bg-red-400/10 border-red-400/30",
+  },
+  dividend: {
+    label: "DIV",
+    color: "text-blue-400 bg-blue-400/10 border-blue-400/30",
+  },
+  adjustment: {
+    label: "ADJ",
+    color: "text-violet-400 bg-violet-400/10 border-violet-400/30",
+  },
+  tax: {
+    label: "TAX",
+    color: "text-amber-400 bg-amber-400/10 border-amber-400/30",
+  },
+  fee: {
+    label: "FEE",
+    color: "text-orange-400 bg-orange-400/10 border-orange-400/30",
+  },
+};
+
+const ACTION_ORDER: InvestmentLogAction[] = [
+  "buy",
+  "sell",
+  "dividend",
+  "adjustment",
+  "tax",
+  "fee",
+];
+
 export default function InvestmentLogTable() {
   const { investmentLog, updateLogEntry, deleteLogEntry, executeLogEntry } = useApp();
   const [actionMessage, setActionMessage] = useState("");
@@ -39,7 +78,13 @@ export default function InvestmentLogTable() {
     ...Array.from(new Set(investmentLog.map((e) => e.symbol))),
   ];
   const statuses = ["ALL", "planned", "executed", "skipped"];
-  const actions = ["ALL", "buy", "sell"];
+  const presentActions = new Set(
+    investmentLog.map((entry) => entry.action ?? "buy")
+  );
+  const actions = [
+    "ALL",
+    ...ACTION_ORDER.filter((action) => presentActions.has(action)),
+  ];
 
   const filtered = investmentLog.filter((e) => {
     if (filterSymbol !== "ALL" && e.symbol !== filterSymbol) return false;
@@ -97,7 +142,9 @@ export default function InvestmentLogTable() {
                   : "border-[#1e2d45] text-slate-600 hover:text-slate-400"
               )}
             >
-              {s === "ALL" ? "All type" : s.toUpperCase()}
+              {s === "ALL"
+                ? "All type"
+                : ACTION_CONFIG[s as InvestmentLogAction].label}
             </button>
           ))}
         </div>
@@ -129,6 +176,11 @@ export default function InvestmentLogTable() {
               <tbody>
                 {filtered.map((entry) => {
                   const cfg = STATUS_CONFIG[entry.status];
+                  const action = entry.action ?? "buy";
+                  const actionCfg = ACTION_CONFIG[action];
+                  const canExecute =
+                    entry.status === "planned" &&
+                    (action === "buy" || action === "sell");
                   const StatusIcon = cfg.icon;
                   return (
                     <tr
@@ -145,16 +197,14 @@ export default function InvestmentLogTable() {
                         <span
                           className={clsx(
                             "inline-flex px-2 py-0.5 rounded-md text-[10px] border font-medium",
-                            entry.action === "sell"
-                              ? "text-red-400 bg-red-400/10 border-red-400/30"
-                              : "text-emerald-400 bg-emerald-400/10 border-emerald-400/30"
+                            actionCfg.color
                           )}
                         >
-                          {(entry.action ?? "buy").toUpperCase()}
+                          {actionCfg.label}
                         </span>
                       </td>
                       <td className="px-3 py-3 text-right text-slate-400">
-                        {entry.shares ? entry.shares.toFixed(6) : "—"}
+                        {entry.shares ? entry.shares.toFixed(6) : "-"}
                       </td>
                       <td className="px-3 py-3 text-right text-slate-300">
                         {formatCurrency(entry.amount, "THB")}
@@ -173,12 +223,14 @@ export default function InvestmentLogTable() {
                         )}
                       </td>
                       <td className="px-3 py-3 text-right text-slate-400">
-                        ${entry.targetPrice.toFixed(2)}
+                        {entry.targetPrice > 0
+                          ? `$${entry.targetPrice.toFixed(2)}`
+                          : "-"}
                       </td>
                       <td className="px-3 py-3 text-right text-slate-400">
-                        {entry.actualPrice
+                        {entry.actualPrice && entry.actualPrice > 0
                           ? `$${entry.actualPrice.toFixed(2)}`
-                          : "—"}
+                          : "-"}
                       </td>
                       <td className="px-3 py-3 text-slate-500 max-w-[120px] truncate">
                         {entry.reason}
@@ -196,7 +248,7 @@ export default function InvestmentLogTable() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          {entry.status === "planned" && (
+                          {canExecute && (
                             <>
                               <button
                                 onClick={() => {
@@ -252,3 +304,4 @@ export default function InvestmentLogTable() {
     </div>
   );
 }
+
