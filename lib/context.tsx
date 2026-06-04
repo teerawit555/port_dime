@@ -103,16 +103,28 @@ function migrateLegacySeedPortfolio(portfolio: Portfolio) {
   };
 }
 
-function isStaleSeedInvestmentLog(logs: InvestmentLogEntry[]) {
+function shouldReplaceWithDimeSeedInvestmentLog(logs: InvestmentLogEntry[]) {
+  const hasDimeSeedEntries = logs.some((entry) => entry.id.startsWith("dime-"));
+  const hasOldMockSeedEntries = logs.some(
+    (entry) =>
+      (entry.id === "1" &&
+        entry.date === "2025-06-01" &&
+        entry.symbol === "GOOGL" &&
+        Math.abs(entry.amount - 500) < 0.001) ||
+      (entry.id === "2" &&
+        entry.date === "2025-05-28" &&
+        entry.symbol === "NVDA" &&
+        Math.abs(entry.amount - 800) < 0.001) ||
+      (entry.id === "4" &&
+        entry.date === "2025-05-22" &&
+        entry.symbol === "VOO" &&
+        Math.abs(entry.amount - 1000) < 0.001)
+  );
+
   return Boolean(
-    logs.length === 5 &&
-      logs.some(
-        (entry) =>
-          entry.id === "1" &&
-          entry.date === "2025-06-01" &&
-          entry.symbol === "GOOGL"
-      ) &&
-      !logs.some((entry) => entry.id.startsWith("dime-"))
+    logs.length > 0 &&
+      hasOldMockSeedEntries &&
+      !hasDimeSeedEntries
   );
 }
 
@@ -239,13 +251,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const savedPortfolio = loadFromStorage("PORTFOLIO", mockPortfolio);
     const savedWatchlist = loadFromStorage("WATCHLIST", mockWatchlist);
     const savedLog = loadFromStorage("LOG", mockInvestmentLog);
-    const logToUse = isStaleSeedInvestmentLog(savedLog)
+    const shouldUseDimeSeed = shouldReplaceWithDimeSeedInvestmentLog(savedLog);
+    const logToUse = shouldUseDimeSeed
       ? mockInvestmentLog
       : savedLog;
     const watchlistToUse = isLegacySeedWatchlist(savedWatchlist)
       ? mockWatchlist
       : mergeDefaultWatchlist(savedWatchlist);
-    const migratedPortfolio = migrateLegacySeedPortfolio(savedPortfolio);
+    const migratedPortfolio = shouldUseDimeSeed
+      ? mockPortfolio
+      : migrateLegacySeedPortfolio(savedPortfolio);
     const portfolioToUse = repairMissingHoldingsFromExecutedLogs(
       migratedPortfolio,
       logToUse,
