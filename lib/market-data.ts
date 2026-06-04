@@ -22,6 +22,7 @@ const KNOWN_COMPANY_NAMES: Record<string, string> = {
   ASTS: "AST SpaceMobile, Inc.",
   NOW: "ServiceNow, Inc.",
   IREN: "IREN Limited",
+  MU: "Micron Technology, Inc.",
 };
 
 type YahooChartResult = {
@@ -241,6 +242,38 @@ function getIntradayUrl(symbol: string, date?: string) {
   return `https://query1.finance.yahoo.com/v8/finance/chart/${encodedSymbol}?period1=${start}&period2=${end}&interval=5m&includePrePost=true`;
 }
 
+function getEasternSessionKey(timestamp: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(timestamp));
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const hour = Number(values.hour);
+  const minute = Number(values.minute);
+
+  return {
+    date: `${values.year}-${values.month}-${values.day}`,
+    minutes: hour * 60 + minute,
+  };
+}
+
+function isRegularMarketPoint(timestamp: string, targetDate?: string) {
+  const eastern = getEasternSessionKey(timestamp);
+  const marketOpen = 9 * 60 + 30;
+  const marketClose = 16 * 60;
+
+  return (
+    (!targetDate || eastern.date === targetDate) &&
+    eastern.minutes >= marketOpen &&
+    eastern.minutes <= marketClose
+  );
+}
+
 async function fetchIntradayHistory(
   symbol: string,
   date?: string
@@ -278,7 +311,10 @@ async function fetchIntradayHistory(
     });
   });
 
-  return { points, meta: result?.meta };
+  return {
+    points: points.filter((point) => isRegularMarketPoint(point.timestamp, date)),
+    meta: result?.meta,
+  };
 }
 
 async function fetchYahooFundamentals(symbol: string): Promise<YahooFundamentals> {

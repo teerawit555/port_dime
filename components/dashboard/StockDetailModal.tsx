@@ -1,17 +1,8 @@
 "use client";
 import { useState } from "react";
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  ReferenceLine,
-} from "recharts";
 import { X, Plus, Minus } from "lucide-react";
-import { mockPriceHistory } from "@/data/mockData";
 import { useApp } from "@/lib/context";
+import StockIntradayChart from "@/components/dashboard/StockIntradayChart";
 import {
   DEFAULT_USD_THB_RATE,
   formatCurrency,
@@ -36,28 +27,6 @@ interface StockDetailModalProps {
   symbol: string;
   onClose: () => void;
 }
-
-type ChartTooltipPayload = {
-  value?: number;
-};
-
-type CustomTooltipProps = {
-  active?: boolean;
-  payload?: ChartTooltipPayload[];
-  label?: string;
-};
-
-const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="bg-[#0d1220] border border-[#1e2d45] rounded-lg px-2.5 py-2 text-[11px]">
-      <p className="text-slate-400">{label}</p>
-      <p className="text-slate-200 font-medium">
-        ${payload[0]?.value?.toFixed(2)}
-      </p>
-    </div>
-  );
-};
 
 function formatMetricPercent(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value)
@@ -100,7 +69,6 @@ export default function StockDetailModal({
 
   const stock = watchlist.find((s) => s.symbol === symbol);
   const holding = portfolio.holdings.find((h) => h.symbol === symbol);
-  const priceHistory = stock?.priceHistory ?? mockPriceHistory[symbol] ?? [];
 
   if (!stock) return null;
 
@@ -125,14 +93,6 @@ export default function StockDetailModal({
     category: stock.category,
     recommendation: stock.recommendation,
   });
-
-  const chartData = priceHistory.slice(-30).map((p) => ({
-    date: p.date.slice(5),
-    price: p.price,
-  }));
-
-  const minPrice = Math.min(...chartData.map((d) => d.price)) * 0.998;
-  const maxPrice = Math.max(...chartData.map((d) => d.price)) * 1.002;
 
   function handleAddEntry() {
     if (!stock || !amount || !targetPrice) return;
@@ -317,90 +277,7 @@ export default function StockDetailModal({
           </div>
         </div>
 
-        {/* Chart */}
-        <div className="px-5 py-3">
-          <div className="h-[140px]">
-            <ResponsiveContainer width="100%" height="100%" minHeight={140}>
-              <AreaChart data={chartData}>
-                <defs>
-                  <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 10, fill: "#4a6080" }}
-                  tickLine={false}
-                  axisLine={false}
-                  interval={6}
-                />
-                <YAxis
-                  domain={[minPrice, maxPrice]}
-                  tick={{ fontSize: 10, fill: "#4a6080" }}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(v) => `$${v.toFixed(0)}`}
-                  width={45}
-                />
-                <Tooltip content={<CustomTooltip />} />
-                {/* Support lines */}
-                {stock.levels.support.slice(0, 2).map((s, i) => (
-                  <ReferenceLine
-                    key={`s${i}`}
-                    y={s}
-                    stroke="#10b981"
-                    strokeDasharray="3 3"
-                    strokeOpacity={0.4}
-                    strokeWidth={1}
-                  />
-                ))}
-                {/* Resistance lines */}
-                {stock.levels.resistance.slice(0, 2).map((r, i) => (
-                  <ReferenceLine
-                    key={`r${i}`}
-                    y={r}
-                    stroke="#ef4444"
-                    strokeDasharray="3 3"
-                    strokeOpacity={0.4}
-                    strokeWidth={1}
-                  />
-                ))}
-                {/* Avg cost */}
-                {holding && holding.avgCost > 0 && (
-                  <ReferenceLine
-                    y={holding.avgCost}
-                    stroke="#f59e0b"
-                    strokeDasharray="4 2"
-                    strokeOpacity={0.7}
-                    strokeWidth={1.5}
-                  />
-                )}
-                <Area
-                  type="monotone"
-                  dataKey="price"
-                  stroke="#3b82f6"
-                  strokeWidth={1.5}
-                  fill="url(#chartGrad)"
-                  dot={false}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="flex gap-4 mt-1 text-[10px]">
-            <span className="flex items-center gap-1 text-emerald-500">
-              <span className="w-3 border-t border-dashed border-emerald-500" /> Support
-            </span>
-            <span className="flex items-center gap-1 text-red-500">
-              <span className="w-3 border-t border-dashed border-red-500" /> Resistance
-            </span>
-            {holding && holding.avgCost > 0 && (
-              <span className="flex items-center gap-1 text-amber-500">
-                <span className="w-3 border-t border-dashed border-amber-500" /> Avg Cost
-              </span>
-            )}
-          </div>
-        </div>
+        <StockIntradayChart stock={stock} avgCost={holding?.avgCost} />
 
         {/* Support / Resistance */}
         <div className="px-5 py-3 grid grid-cols-2 gap-3">

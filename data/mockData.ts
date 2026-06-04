@@ -162,6 +162,21 @@ export const mockWatchlist: StockWatchlistItem[] = [
     category: "Growth",
     notes: "Watching AI infrastructure / bitcoin mining exposure",
   },
+  {
+    symbol: "MU",
+    companyName: "Micron Technology, Inc.",
+    currentPrice: 120,
+    previousClose: 118.5,
+    changePercent: 1.27,
+    levels: {
+      support: [116, 110, 104],
+      resistance: [124, 130, 138],
+    },
+    status: DEFAULT_WATCHLIST_STATUS,
+    recommendation: DEFAULT_WATCHLIST_RECOMMENDATION,
+    category: "Tech",
+    notes: "Watching AI memory / HBM demand",
+  },
 ];
 
 const dimeSeedData = buildDimeSeedData(mockWatchlist);
@@ -203,6 +218,7 @@ export const mockPriceHistory: Record<string, PricePoint[]> = {
   ASTS: generateMockPrices(105.65, 60, 0.045),
   NOW: generateMockPrices(135.86, 60, 0.025),
   IREN: generateMockPrices(65.33, 60, 0.05),
+  MU: generateMockPrices(120, 60, 0.03),
 };
 
 export const ALLOCATION_COLORS: Record<string, string> = {
@@ -216,6 +232,7 @@ export const ALLOCATION_COLORS: Record<string, string> = {
   ASTS: "#22c55e",
   NOW: "#818cf8",
   IREN: "#f97316",
+  MU: "#06b6d4",
 };
 
 
