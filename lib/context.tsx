@@ -25,6 +25,7 @@ import {
 import { saveToStorage, loadFromStorage, getStockStatus, getRecommendation, calcPortfolioMetrics, generateId, DEFAULT_USD_THB_RATE } from "@/lib/utils";
 
 const MARKET_REFRESH_INTERVAL_MS = 60 * 1000;
+const MARKET_REFRESH_BATCH_SIZE = 3;
 
 interface AppContextType {
   portfolio: Portfolio;
@@ -84,6 +85,14 @@ function mergeDefaultWatchlist(watchlist: StockWatchlistItem[]) {
   return missingDefaults.length > 0
     ? [...watchlist, ...missingDefaults]
     : watchlist;
+}
+
+function chunkSymbols(symbols: string[], size: number) {
+  const chunks: string[][] = [];
+  for (let index = 0; index < symbols.length; index += size) {
+    chunks.push(symbols.slice(index, index + size));
+  }
+  return chunks;
 }
 
 function migrateLegacySeedPortfolio(portfolio: Portfolio) {
@@ -423,27 +432,66 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
 
     try {
-      const res = await fetch(
-        `/api/market?symbols=${encodeURIComponent(symbolsKey)}&t=${Date.now()}`,
-        {
-          cache: "no-store",
-        }
+      const symbolBatches = chunkSymbols(
+        symbolsKey.split(",").filter(Boolean),
+        MARKET_REFRESH_BATCH_SIZE
       );
-      const payload = (await res.json()) as MarketApiResponse;
+      const batchResults = await Promise.allSettled(
+        symbolBatches.map(async (batch) => {
+          const res = await fetch(
+            `/api/market?symbols=${encodeURIComponent(batch.join(","))}&t=${Date.now()}`,
+            {
+              cache: "no-store",
+            }
+          );
+          const payload = (await res.json()) as MarketApiResponse;
 
-      if (!res.ok) {
-        throw new Error(payload.errors[0]?.message ?? "Market data sync failed");
+          if (!res.ok) {
+            throw new Error(
+              payload.errors[0]?.message ?? "Market data sync failed"
+            );
+          }
+
+          return payload;
+        })
+      );
+      const successfulPayloads = batchResults.flatMap((result) =>
+        result.status === "fulfilled" ? [result.value] : []
+      );
+      const failedErrors = batchResults.flatMap((result) =>
+        result.status === "rejected"
+          ? [
+              {
+                symbol: "",
+                message:
+                  result.reason instanceof Error
+                    ? result.reason.message
+                    : "Market data sync failed",
+              },
+            ]
+          : []
+      );
+      const data = successfulPayloads.flatMap((payload) => payload.data);
+      const errors = [
+        ...successfulPayloads.flatMap((payload) => payload.errors),
+        ...failedErrors,
+      ];
+
+      if (data.length === 0 && errors.length > 0) {
+        throw new Error(errors[0]?.message ?? "Market data sync failed");
       }
 
-      applyMarketSnapshots(payload.data);
+      applyMarketSnapshots(data);
       setMarketStatus({
         isLoading: false,
-        updatedAt: payload.updatedAt,
-        source: payload.data[0]?.source ?? payload.source,
+        updatedAt: new Date().toISOString(),
+        source:
+          data[0]?.source ??
+          successfulPayloads.find((payload) => payload.source)?.source,
         refreshIntervalMs: MARKET_REFRESH_INTERVAL_MS,
         error:
-          payload.data.length === 0
-            ? payload.errors[0]?.message ?? "No market data returned"
+          data.length === 0
+            ? errors[0]?.message ?? "No market data returned"
             : undefined,
       });
     } catch (error) {
