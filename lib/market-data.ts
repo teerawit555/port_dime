@@ -1,4 +1,9 @@
-import type { MarketSnapshot, PricePoint, SupportResistance } from "@/types";
+import type {
+  IntradaySeries,
+  MarketSnapshot,
+  PricePoint,
+  SupportResistance,
+} from "@/types";
 
 const SOURCE = "Yahoo Finance";
 const FUNDAMENTALS_SOURCE = "Yahoo Finance fundamentals";
@@ -71,6 +76,11 @@ type YahooChartMeta = NonNullable<YahooChartResult["meta"]>;
 
 type PriceHistoryResult = {
   points: PricePoint[];
+  meta?: YahooChartMeta;
+};
+
+type IntradayHistoryResult = {
+  points: IntradaySeries["points"];
   meta?: YahooChartMeta;
 };
 
@@ -206,6 +216,60 @@ async function fetchPriceHistory(symbol: string): Promise<PriceHistoryResult> {
     const volume = asFiniteNumber(volumes[index]);
     points.push({
       date: new Date(timestamp * 1000).toISOString().slice(0, 10),
+      price,
+      ...(open === undefined ? {} : { open }),
+      ...(high === undefined ? {} : { high }),
+      ...(low === undefined ? {} : { low }),
+      ...(volume === undefined ? {} : { volume }),
+    });
+  });
+
+  return { points, meta: result?.meta };
+}
+
+function getIntradayUrl(symbol: string, date?: string) {
+  const encodedSymbol = encodeURIComponent(symbol);
+
+  if (!date) {
+    return `https://query1.finance.yahoo.com/v8/finance/chart/${encodedSymbol}?range=1d&interval=1m&includePrePost=true`;
+  }
+
+  const [year, month, day] = date.split("-").map(Number);
+  const start = Math.floor(Date.UTC(year, month - 1, day, 0, 0, 0) / 1000);
+  const end = start + 24 * 60 * 60;
+
+  return `https://query1.finance.yahoo.com/v8/finance/chart/${encodedSymbol}?period1=${start}&period2=${end}&interval=5m&includePrePost=true`;
+}
+
+async function fetchIntradayHistory(
+  symbol: string,
+  date?: string
+): Promise<IntradayHistoryResult> {
+  const json = await fetchJson<{ chart?: { result?: YahooChartResult[] } }>(
+    getIntradayUrl(symbol, date)
+  );
+  const result = json.chart?.result?.[0];
+  const timestamps = result?.timestamp ?? [];
+  const quote = result?.indicators?.quote?.[0];
+  const opens = quote?.open ?? [];
+  const highs = quote?.high ?? [];
+  const lows = quote?.low ?? [];
+  const closes = quote?.close ?? [];
+  const volumes = quote?.volume ?? [];
+
+  const points: IntradaySeries["points"] = [];
+
+  timestamps.forEach((timestamp, index) => {
+    const price = asFiniteNumber(closes[index]);
+    if (price === undefined) return;
+
+    const open = asFiniteNumber(opens[index]);
+    const high = asFiniteNumber(highs[index]);
+    const low = asFiniteNumber(lows[index]);
+    const volume = asFiniteNumber(volumes[index]);
+
+    points.push({
+      timestamp: new Date(timestamp * 1000).toISOString(),
       price,
       ...(open === undefined ? {} : { open }),
       ...(high === undefined ? {} : { high }),
@@ -758,6 +822,34 @@ async function buildMarketSnapshot(symbol: string) {
   } satisfies MarketSnapshot;
 }
 
+async function buildIntradaySeries(symbol: string, date?: string) {
+  const { points, meta } = await fetchIntradayHistory(symbol, date);
+
+  if (points.length === 0) {
+    const error = new Error(`No intraday data returned for ${symbol}`);
+    error.name = symbol;
+    throw error;
+  }
+
+  return {
+    symbol,
+    companyName:
+      meta?.longName ??
+      KNOWN_COMPANY_NAMES[symbol] ??
+      meta?.shortName ??
+      symbol,
+    currency: meta?.currency ?? "USD",
+    previousClose:
+      asFiniteNumber(meta?.previousClose) ??
+      asFiniteNumber(meta?.chartPreviousClose),
+    marketTime: meta?.regularMarketTime
+      ? new Date(meta.regularMarketTime * 1000).toISOString()
+      : undefined,
+    points,
+    source: SOURCE,
+  } satisfies IntradaySeries;
+}
+
 export async function getMarketSnapshotResults(symbols: string[]) {
   const normalizedSymbols = normalizeSymbols(symbols);
 
@@ -780,6 +872,39 @@ export async function getMarketSnapshotResults(symbols: string[]) {
                   result.reason instanceof Error
                     ? result.reason.message
                     : "Unknown market data error",
+              },
+            ]
+          : []
+      ),
+    ],
+  };
+}
+
+export async function getIntradaySeriesResults(
+  symbols: string[],
+  date?: string
+) {
+  const normalizedSymbols = normalizeSymbols(symbols);
+
+  const settled = await Promise.allSettled(
+    normalizedSymbols.map((symbol) => buildIntradaySeries(symbol, date))
+  );
+
+  return {
+    data: settled.flatMap((result) =>
+      result.status === "fulfilled" ? result.value : []
+    ),
+    errors: [
+      ...settled.flatMap((result) =>
+        result.status === "rejected"
+          ? [
+              {
+                symbol:
+                  result.reason instanceof Error ? result.reason.name : "",
+                message:
+                  result.reason instanceof Error
+                    ? result.reason.message
+                    : "Unknown intraday market data error",
               },
             ]
           : []

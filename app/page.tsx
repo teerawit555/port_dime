@@ -6,6 +6,7 @@ import AllocationChart from "@/components/dashboard/AllocationChart";
 import HoldingsTable from "@/components/dashboard/HoldingsTable";
 import DailyInvestmentInput from "@/components/dashboard/DailyInvestmentInput";
 import StockDetailModal from "@/components/dashboard/StockDetailModal";
+import IntradayChart from "@/components/dashboard/IntradayChart";
 import MarketSyncStatus from "@/components/market/MarketSyncStatus";
 import { useApp } from "@/lib/context";
 import {
@@ -22,7 +23,6 @@ import {
   Wallet,
   BarChart2,
 } from "lucide-react";
-import { clsx } from "clsx";
 
 export default function DashboardPage() {
   const { portfolio } = useApp();
@@ -40,7 +40,7 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between gap-3">
           <div>
             <h1 className="text-[18px] font-semibold text-slate-100">
-              Portfolio Overview
+              TT Portfolio Overview
             </h1>
             <p className="text-[12px] text-slate-500 mt-0.5">
               อัพเดทล่าสุด: {new Date().toLocaleDateString("th-TH")}
@@ -84,6 +84,8 @@ export default function DashboardPage() {
             accent="amber"
           />
         </div>
+
+        <IntradayChart />
 
         {/* Main grid */}
         <div className="grid lg:grid-cols-3 gap-4">

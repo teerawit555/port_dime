@@ -172,6 +172,15 @@ export interface PricePoint {
   volume?: number;
 }
 
+export interface IntradayPricePoint {
+  timestamp: string;
+  price: number;
+  open?: number;
+  high?: number;
+  low?: number;
+  volume?: number;
+}
+
 export interface MarketSnapshot extends FundamentalMetrics, TechnicalMetrics {
   symbol: string;
   companyName: string;
@@ -196,6 +205,25 @@ export interface MarketApiResponse {
   errors: Array<{ symbol: string; message: string }>;
   updatedAt: string;
   source: string;
+}
+
+export interface IntradaySeries {
+  symbol: string;
+  companyName: string;
+  currency: string;
+  previousClose?: number;
+  marketTime?: string;
+  points: IntradayPricePoint[];
+  source: string;
+}
+
+export interface IntradayApiResponse {
+  data: IntradaySeries[];
+  errors: Array<{ symbol: string; message: string }>;
+  updatedAt: string;
+  source: string;
+  interval: string;
+  date?: string;
 }
 
 export interface MarketSyncStatus {
