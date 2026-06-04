@@ -66,6 +66,7 @@ export default function StockDetailModal({
   const [targetPrice, setTargetPrice] = useState("");
   const [reason, setReason] = useState("DCA ปกติ");
   const [tradeMessage, setTradeMessage] = useState("");
+  const [sellAllMode, setSellAllMode] = useState(false);
 
   const stock = watchlist.find((s) => s.symbol === symbol);
   const holding = portfolio.holdings.find((h) => h.symbol === symbol);
@@ -93,16 +94,81 @@ export default function StockDetailModal({
     category: stock.category,
     recommendation: stock.recommendation,
   });
+  const heldShares = holding?.shares ?? 0;
+  const parsedTargetPrice = parseFloat(targetPrice);
+  const sellAllProceedsThb =
+    sellAllMode &&
+    tradeAction === "sell" &&
+    heldShares > 0 &&
+    Number.isFinite(parsedTargetPrice) &&
+    parsedTargetPrice > 0
+      ? heldShares * parsedTargetPrice * DEFAULT_USD_THB_RATE
+      : 0;
+
+  function getSellAllAmount(priceValue: string) {
+    const price = parseFloat(priceValue);
+    if (!holding || holding.shares <= 0 || !Number.isFinite(price) || price <= 0) {
+      return "";
+    }
+    return (holding.shares * price * DEFAULT_USD_THB_RATE).toFixed(2);
+  }
+
+  function openTradeForm(action: "buy" | "sell", shouldSellAll = false) {
+    const priceValue = stock!.currentPrice.toFixed(2);
+    setTradeAction(action);
+    setSellAllMode(action === "sell" && shouldSellAll);
+    setReason(
+      action === "buy"
+        ? "ซื้อเพิ่ม"
+        : shouldSellAll
+          ? "ขายทั้งหมด"
+          : "ขายทำรายการ"
+    );
+    setTargetPrice(priceValue);
+    setAmount(action === "sell" && shouldSellAll ? getSellAllAmount(priceValue) : "");
+    setTradeMessage("");
+    setShowAddForm(true);
+  }
+
+  function handleTradeActionChange(action: "buy" | "sell") {
+    setTradeAction(action);
+    setSellAllMode(false);
+    setAmount("");
+    setReason(action === "buy" ? "ซื้อเพิ่ม" : "ขายทำรายการ");
+    setTradeMessage("");
+  }
+
+  function handleTargetPriceChange(value: string) {
+    setTargetPrice(value);
+    if (sellAllMode) {
+      setAmount(getSellAllAmount(value));
+    }
+  }
+
+  function closeTradeForm() {
+    setShowAddForm(false);
+    setSellAllMode(false);
+  }
 
   function handleAddEntry() {
-    if (!stock || !amount || !targetPrice) return;
-    const amountThb = parseFloat(amount);
     const priceUsd = parseFloat(targetPrice);
+    const amountThb = sellAllMode ? sellAllProceedsThb : parseFloat(amount);
+    if (
+      !Number.isFinite(priceUsd) ||
+      priceUsd <= 0 ||
+      !Number.isFinite(amountThb) ||
+      amountThb <= 0
+    ) {
+      setTradeMessage("กรุณากรอกราคาและจำนวนเงินให้ถูกต้อง");
+      return;
+    }
+
     const result = executeTrade({
       action: tradeAction,
+      sellAll: tradeAction === "sell" && sellAllMode,
       symbol,
-      companyName: stock.companyName,
-      category: stock.category,
+      companyName: stock!.companyName,
+      category: stock!.category,
       amountThb,
       priceUsd,
       exchangeRate: DEFAULT_USD_THB_RATE,
@@ -124,6 +190,7 @@ export default function StockDetailModal({
       setTradeMessage("");
     }, 1800);
     setShowAddForm(false);
+    setSellAllMode(false);
     setAmount("");
     setTargetPrice("");
     setNote("");
@@ -441,11 +508,7 @@ export default function StockDetailModal({
                   <button
                     key={item.key}
                     type="button"
-                    onClick={() => {
-                      setTradeAction(item.key as "buy" | "sell");
-                      setReason(item.key === "buy" ? "ซื้อเพิ่ม" : "ขายทำรายการ");
-                      setTradeMessage("");
-                    }}
+                    onClick={() => handleTradeActionChange(item.key as "buy" | "sell")}
                     className={clsx(
                       "px-3 py-1.5 text-[11px] font-medium transition-colors",
                       tradeAction === item.key
@@ -463,14 +526,24 @@ export default function StockDetailModal({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-[10px] text-slate-600 block mb-1">
-                  {tradeAction === "buy" ? "เงินลงทุน (THB)" : "มูลค่าขาย (THB)"}
+                  {sellAllMode
+                    ? "เงินรับโดยประมาณ (THB)"
+                    : tradeAction === "buy"
+                      ? "เงินลงทุน (THB)"
+                      : "มูลค่าขาย (THB)"}
                 </label>
                 <input
                   type="number"
                   value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="500"
-                  className="w-full bg-[#141d2e] border border-[#1e2d45] rounded-lg px-3 py-2 text-[12px] text-slate-200 outline-none focus:border-blue-500/50"
+                  onChange={(e) => {
+                    if (!sellAllMode) setAmount(e.target.value);
+                  }}
+                  readOnly={sellAllMode}
+                  placeholder={sellAllMode ? "Auto" : "500"}
+                  className={clsx(
+                    "w-full bg-[#141d2e] border border-[#1e2d45] rounded-lg px-3 py-2 text-[12px] text-slate-200 outline-none focus:border-blue-500/50",
+                    sellAllMode && "text-emerald-300"
+                  )}
                 />
               </div>
               <div>
@@ -480,12 +553,24 @@ export default function StockDetailModal({
                 <input
                   type="number"
                   value={targetPrice}
-                  onChange={(e) => setTargetPrice(e.target.value)}
+                  onChange={(e) => handleTargetPriceChange(e.target.value)}
                   placeholder={stock.currentPrice.toFixed(2)}
                   className="w-full bg-[#141d2e] border border-[#1e2d45] rounded-lg px-3 py-2 text-[12px] text-slate-200 outline-none focus:border-blue-500/50"
                 />
               </div>
             </div>
+            {sellAllMode && (
+              <div className="rounded-lg border border-red-500/25 bg-red-500/5 px-3 py-2 text-[11px] text-slate-400">
+                Sell all{" "}
+                <span className="text-slate-200">{heldShares.toFixed(6)}</span>{" "}
+                shares · proceeds{" "}
+                <span className="text-emerald-300">
+                  ฿{sellAllProceedsThb.toLocaleString("en-US", {
+                    maximumFractionDigits: 2,
+                  })}
+                </span>
+              </div>
+            )}
             <div>
               <label className="text-[10px] text-slate-600 block mb-1">
                 เหตุผล
@@ -557,7 +642,7 @@ export default function StockDetailModal({
                 {tradeAction === "buy" ? "ซื้อและอัปเดตพอร์ต" : "ขายและอัปเดตพอร์ต"}
               </button>
               <button
-                onClick={() => setShowAddForm(false)}
+                onClick={closeTradeForm}
                 className="px-4 border border-[#1e2d45] text-slate-500 rounded-lg py-2 text-[12px] transition-colors hover:text-slate-300"
               >
                 ยกเลิก
@@ -565,31 +650,30 @@ export default function StockDetailModal({
             </div>
           </div>
         ) : (
-          <div className="px-5 py-3 border-t border-[#1e2d45] flex gap-2">
+          <div className="px-5 py-3 border-t border-[#1e2d45] flex flex-wrap gap-2">
             <button
-              onClick={() => {
-                setTradeAction("buy");
-                setReason("ซื้อเพิ่ม");
-                setTargetPrice(stock.currentPrice.toFixed(2));
-                setShowAddForm(true);
-              }}
-              className="flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-lg px-3 py-2 text-[12px] font-medium transition-colors"
+              onClick={() => openTradeForm("buy")}
+              className="flex min-w-24 flex-1 items-center justify-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-lg px-3 py-2 text-[12px] font-medium transition-colors"
             >
               <Plus className="w-3.5 h-3.5" />
               Buy
             </button>
             <button
-              onClick={() => {
-                setTradeAction("sell");
-                setReason("ขายทำรายการ");
-                setTargetPrice(stock.currentPrice.toFixed(2));
-                setShowAddForm(true);
-              }}
-              className="flex items-center gap-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-lg px-3 py-2 text-[12px] font-medium transition-colors"
+              onClick={() => openTradeForm("sell")}
+              className="flex min-w-24 flex-1 items-center justify-center gap-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-lg px-3 py-2 text-[12px] font-medium transition-colors"
             >
               <Minus className="w-3.5 h-3.5" />
               Sell
             </button>
+            {holding && holding.shares > 0 && (
+              <button
+                onClick={() => openTradeForm("sell", true)}
+                className="flex min-w-28 flex-1 items-center justify-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 rounded-lg px-3 py-2 text-[12px] font-medium transition-colors"
+              >
+                <Minus className="w-3.5 h-3.5" />
+                Sell All
+              </button>
+            )}
           </div>
         )}
       </div>

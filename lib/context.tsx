@@ -530,17 +530,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const executeTrade = useCallback((input: ExecuteTradeInput) => {
-    if (input.amountThb <= 0 || input.priceUsd <= 0 || input.exchangeRate <= 0) {
+    const isSellAll = input.action === "sell" && input.sellAll;
+    if (
+      (!isSellAll && (!Number.isFinite(input.amountThb) || input.amountThb <= 0)) ||
+      !Number.isFinite(input.priceUsd) ||
+      input.priceUsd <= 0 ||
+      !Number.isFinite(input.exchangeRate) ||
+      input.exchangeRate <= 0
+    ) {
       return { ok: false, message: "กรุณากรอกจำนวนเงินและราคาให้ถูกต้อง" };
     }
 
     const amountUsd = input.amountThb / input.exchangeRate;
-    const executedShares = amountUsd / input.priceUsd;
+    let executedShares = amountUsd / input.priceUsd;
+    let tradeAmountThb = input.amountThb;
     const existing = portfolio.holdings.find((h) => h.symbol === input.symbol);
 
     if (input.action === "sell") {
       if (!existing || existing.shares <= 0) {
         return { ok: false, message: "ยังไม่มีหุ้นตัวนี้ให้ขาย" };
+      }
+      if (isSellAll) {
+        executedShares = existing.shares;
+        tradeAmountThb = executedShares * input.priceUsd * input.exchangeRate;
       }
       if (executedShares > existing.shares + 0.000001) {
         return { ok: false, message: "จำนวนขายมากกว่าหุ้นที่ถืออยู่" };
@@ -552,7 +564,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     let realizedPnL: number | undefined;
 
     if (input.action === "buy") {
-      cashBalance -= input.amountThb;
+      cashBalance -= tradeAmountThb;
       if (existing) {
         updatedHoldings = portfolio.holdings.map((holding) => {
           if (holding.symbol !== input.symbol) return holding;
@@ -589,23 +601,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         (input.priceUsd - existing.avgCost) *
         executedShares *
         input.exchangeRate;
-      cashBalance += input.amountThb;
-      updatedHoldings = portfolio.holdings.map((holding) =>
-        holding.symbol === input.symbol
-          ? {
-              ...holding,
-              shares: Math.max(0, holding.shares - executedShares),
-              currentPrice: input.priceUsd,
-            }
-          : holding
-      );
+      cashBalance += tradeAmountThb;
+      updatedHoldings = portfolio.holdings
+        .map((holding) =>
+          holding.symbol === input.symbol
+            ? {
+                ...holding,
+                shares: Math.max(0, holding.shares - executedShares),
+                currentPrice: input.priceUsd,
+              }
+            : holding
+        )
+        .filter((holding) => holding.shares > 0.000001);
     }
 
     const createdEntry: InvestmentLogEntry = {
       id: generateId(),
       date: input.date ?? new Date().toISOString().slice(0, 10),
       symbol: input.symbol,
-      amount: input.amountThb,
+      amount: tradeAmountThb,
       targetPrice: input.priceUsd,
       actualPrice: input.priceUsd,
       action: input.action,
@@ -709,15 +723,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       realizedPnL =
         (priceUsd - existing.avgCost) * executedShares * exchangeRate;
       cashBalance += amountThb;
-      updatedHoldings = portfolio.holdings.map((holding) =>
-        holding.symbol === entry.symbol
-          ? {
-              ...holding,
-              shares: Math.max(0, holding.shares - executedShares),
-              currentPrice: priceUsd,
-            }
-          : holding
-      );
+      updatedHoldings = portfolio.holdings
+        .map((holding) =>
+          holding.symbol === entry.symbol
+            ? {
+                ...holding,
+                shares: Math.max(0, holding.shares - executedShares),
+                currentPrice: priceUsd,
+              }
+            : holding
+        )
+        .filter((holding) => holding.shares > 0.000001);
     }
 
     const updatedPortfolio = {

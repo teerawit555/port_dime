@@ -127,6 +127,7 @@ export interface InvestmentLogEntry {
 
 export interface ExecuteTradeInput {
   action: TradeAction;
+  sellAll?: boolean;
   date?: string;
   symbol: string;
   companyName: string;
