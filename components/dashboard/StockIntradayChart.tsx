@@ -12,16 +12,26 @@ import {
   YAxis,
 } from "recharts";
 import { clsx } from "clsx";
+import { mockPriceHistory } from "@/data/mockData";
 import { formatPercent } from "@/lib/utils";
 import type {
   IntradayApiResponse,
+  PricePoint,
   StockWatchlistItem,
 } from "@/types";
 
 const AUTO_REFRESH_MS = 60 * 1000;
+const RANGE_OPTIONS = [
+  { key: "1D", label: "1D Live", days: 1 },
+  { key: "5D", label: "5D", days: 5 },
+  { key: "1M", label: "1M", days: 30 },
+  { key: "1Y", label: "1Y", days: 252 },
+] as const;
+
+type ChartRange = (typeof RANGE_OPTIONS)[number]["key"];
 
 type ChartPoint = {
-  time: string;
+  label: string;
   timestamp: string;
   price: number;
 };
@@ -43,6 +53,10 @@ function formatTime(timestamp: string) {
   }).format(new Date(timestamp));
 }
 
+function formatDateLabel(date: string) {
+  return date.slice(5);
+}
+
 function formatSyncTime(timestamp?: string) {
   if (!timestamp) return "waiting";
   return new Intl.DateTimeFormat("th-TH", {
@@ -52,7 +66,13 @@ function formatSyncTime(timestamp?: string) {
   }).format(new Date(timestamp));
 }
 
-function IntradayTooltip({
+function sliceHistory(history: PricePoint[], range: ChartRange) {
+  if (range === "1D") return [];
+  const days = RANGE_OPTIONS.find((option) => option.key === range)?.days ?? 30;
+  return history.slice(-days);
+}
+
+function ChartTooltip({
   active,
   payload,
 }: {
@@ -64,10 +84,8 @@ function IntradayTooltip({
 
   return (
     <div className="rounded-lg border border-[#1e2d45] bg-[#0d1220] px-2.5 py-2 text-[11px] shadow-xl">
-      <p className="text-slate-500">{point.time}</p>
-      <p className="font-medium text-slate-100">
-        ${point.price.toFixed(2)}
-      </p>
+      <p className="text-slate-500">{point.label}</p>
+      <p className="font-medium text-slate-100">${point.price.toFixed(2)}</p>
     </div>
   );
 }
@@ -79,12 +97,21 @@ export default function StockIntradayChart({
   stock: StockWatchlistItem;
   avgCost?: number;
 }) {
+  const [range, setRange] = useState<ChartRange>("1D");
   const [selectedDate, setSelectedDate] = useState("");
   const [payload, setPayload] = useState<IntradayApiResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const isLiveRange = range === "1D";
+  const historicalPrices = useMemo(
+    () => stock.priceHistory ?? mockPriceHistory[stock.symbol] ?? [],
+    [stock.priceHistory, stock.symbol]
+  );
+
   const loadIntraday = useCallback(async () => {
+    if (!isLiveRange) return;
+
     setLoading(true);
     setError("");
 
@@ -110,7 +137,7 @@ export default function StockIntradayChart({
       if (nextPayload.data.length === 0) {
         setError(
           nextPayload.errors[0]?.message ??
-            "ยังไม่มีข้อมูล intraday สำหรับ session นี้"
+            "No intraday data for this session yet"
         );
       }
     } catch (nextError) {
@@ -122,9 +149,11 @@ export default function StockIntradayChart({
     } finally {
       setLoading(false);
     }
-  }, [selectedDate, stock.symbol]);
+  }, [isLiveRange, selectedDate, stock.symbol]);
 
   useEffect(() => {
+    if (!isLiveRange) return;
+
     const initialLoad = window.setTimeout(loadIntraday, 0);
     if (selectedDate) {
       return () => window.clearTimeout(initialLoad);
@@ -135,18 +164,26 @@ export default function StockIntradayChart({
       window.clearTimeout(initialLoad);
       window.clearInterval(interval);
     };
-  }, [loadIntraday, selectedDate]);
+  }, [isLiveRange, loadIntraday, selectedDate]);
 
   const chartData = useMemo<ChartPoint[]>(() => {
+    if (!isLiveRange) {
+      return sliceHistory(historicalPrices, range).map((point) => ({
+        timestamp: point.date,
+        label: formatDateLabel(point.date),
+        price: point.price,
+      }));
+    }
+
     const series = payload?.data.find((item) => item.symbol === stock.symbol);
     return (
       series?.points.map((point) => ({
         timestamp: point.timestamp,
-        time: formatTime(point.timestamp),
+        label: formatTime(point.timestamp),
         price: point.price,
       })) ?? []
     );
-  }, [payload, stock.symbol]);
+  }, [historicalPrices, isLiveRange, payload, range, stock.symbol]);
 
   const stats = useMemo(() => {
     if (chartData.length === 0) return null;
@@ -169,14 +206,19 @@ export default function StockIntradayChart({
     chartData.length > 0
       ? Math.max(...chartData.map((point) => point.price)) * 1.002
       : stock.currentPrice * 1.02;
+  const statusText = isLiveRange
+    ? selectedDate
+      ? selectedDate
+      : "Auto refresh 60s"
+    : `${range} history`;
 
   return (
     <div className="px-5 py-3">
-      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.14em] text-emerald-400/80">
             <Radio className="h-3.5 w-3.5" />
-            Live regular session
+            {isLiveRange ? "Live regular session" : "Historical chart"}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <span className="font-numeric text-[13px] font-semibold text-slate-100">
@@ -196,43 +238,71 @@ export default function StockIntradayChart({
                 ? `${stats.change >= 0 ? "+" : ""}$${stats.change.toFixed(
                     2
                   )} (${formatPercent(stats.changePercent)})`
-                : "market open-close"}
+                : isLiveRange
+                  ? "market open-close"
+                  : "waiting for history"}
             </span>
-            <span className="text-[10px] text-slate-600">
-              Sync {formatSyncTime(payload?.updatedAt)}
-            </span>
+            {isLiveRange && (
+              <span className="text-[10px] text-slate-600">
+                Sync {formatSyncTime(payload?.updatedAt)}
+              </span>
+            )}
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex h-8 items-center gap-2 rounded-lg border border-[#1e2d45] bg-[#141d2e] px-2">
-            <CalendarClock className="h-3.5 w-3.5 text-slate-500" />
-            <input
-              type="date"
-              value={selectedDate}
-              max={getLocalDateInputValue()}
-              onChange={(event) => setSelectedDate(event.target.value)}
-              className="w-[122px] bg-transparent text-[11px] text-slate-300 outline-none"
-            />
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          <div className="flex overflow-hidden rounded-lg border border-[#1e2d45] bg-[#111827]">
+            {RANGE_OPTIONS.map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                onClick={() => setRange(option.key)}
+                className={clsx(
+                  "h-8 px-2.5 text-[10px] font-medium transition-colors",
+                  range === option.key
+                    ? "bg-blue-500/20 text-blue-300"
+                    : "text-slate-500 hover:bg-white/[0.03] hover:text-slate-300"
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
           </div>
-          {selectedDate && (
-            <button
-              type="button"
-              onClick={() => setSelectedDate("")}
-              className="h-8 rounded-lg border border-[#1e2d45] px-2.5 text-[10px] text-slate-400 transition-colors hover:border-blue-500/40 hover:text-slate-200"
-            >
-              Latest
-            </button>
+
+          {isLiveRange && (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="flex h-8 items-center gap-2 rounded-lg border border-[#1e2d45] bg-[#141d2e] px-2">
+                <CalendarClock className="h-3.5 w-3.5 text-slate-500" />
+                <input
+                  type="date"
+                  value={selectedDate}
+                  max={getLocalDateInputValue()}
+                  onChange={(event) => setSelectedDate(event.target.value)}
+                  className="w-[122px] bg-transparent text-[11px] text-slate-300 outline-none"
+                />
+              </div>
+              {selectedDate && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedDate("")}
+                  className="h-8 rounded-lg border border-[#1e2d45] px-2.5 text-[10px] text-slate-400 transition-colors hover:border-blue-500/40 hover:text-slate-200"
+                >
+                  Latest
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={loadIntraday}
+                className="grid h-8 w-8 place-items-center rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-400 transition-colors hover:bg-blue-500/15"
+                title="Refresh intraday chart"
+                aria-label="Refresh intraday chart"
+              >
+                <RefreshCw
+                  className={clsx("h-3.5 w-3.5", loading && "animate-spin")}
+                />
+              </button>
+            </div>
           )}
-          <button
-            type="button"
-            onClick={loadIntraday}
-            className="grid h-8 w-8 place-items-center rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-400 transition-colors hover:bg-blue-500/15"
-            title="Refresh intraday chart"
-            aria-label="Refresh intraday chart"
-          >
-            <RefreshCw className={clsx("h-3.5 w-3.5", loading && "animate-spin")} />
-          </button>
         </div>
       </div>
 
@@ -245,7 +315,7 @@ export default function StockIntradayChart({
             >
               <defs>
                 <linearGradient
-                  id={`intradayGrad-${stock.symbol}`}
+                  id={`stockChartGrad-${stock.symbol}`}
                   x1="0"
                   y1="0"
                   x2="0"
@@ -256,7 +326,7 @@ export default function StockIntradayChart({
                 </linearGradient>
               </defs>
               <XAxis
-                dataKey="time"
+                dataKey="label"
                 tick={{ fontSize: 10, fill: "#4a6080" }}
                 tickLine={false}
                 axisLine={false}
@@ -270,7 +340,7 @@ export default function StockIntradayChart({
                 tickFormatter={(value) => `$${Number(value).toFixed(0)}`}
                 width={45}
               />
-              <Tooltip content={<IntradayTooltip />} />
+              <Tooltip content={<ChartTooltip />} />
               {stock.levels.support.slice(0, 2).map((support, index) => (
                 <ReferenceLine
                   key={`support-${index}`}
@@ -305,7 +375,7 @@ export default function StockIntradayChart({
                 dataKey="price"
                 stroke={lineColor}
                 strokeWidth={1.8}
-                fill={`url(#intradayGrad-${stock.symbol})`}
+                fill={`url(#stockChartGrad-${stock.symbol})`}
                 dot={false}
                 isAnimationActive={false}
               />
@@ -313,7 +383,9 @@ export default function StockIntradayChart({
           </ResponsiveContainer>
         ) : (
           <div className="flex h-full items-center justify-center px-4 text-center text-[12px] text-slate-600">
-            {loading ? "กำลังโหลดกราฟ..." : error || "รอข้อมูลตลาดเปิด"}
+            {loading
+              ? "Loading chart..."
+              : error || "Waiting for chart data"}
           </div>
         )}
       </div>
@@ -335,7 +407,7 @@ export default function StockIntradayChart({
             </span>
           )}
         </div>
-        <span>{selectedDate ? selectedDate : "Auto refresh 60s"}</span>
+        <span>{statusText}</span>
       </div>
     </div>
   );
